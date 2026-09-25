@@ -1,0 +1,74 @@
+# ------------------------------------------------------------------
+# Lolz Star Bot — runtime configuration (no secrets here, see .env)
+# ------------------------------------------------------------------
+
+forum:
+  # API base url. Env FORUM_BASE_URL overrides this.
+  baseUrl: https://api.lolz.team
+  # Thread to watch. Env FORUM_THREAD_ID overrides this.
+  threadId: 10335815
+  # Per-request timeout.
+  requestTimeoutMs: 15000
+  # Listing order. `natural_reverse` puts the pinned first post + newest posts on page 1,
+  # which is exactly what the poller wants.
+  order: natural_reverse
+
+polling:
+  # How often to poll page 1 once the backlog is drained.
+  intervalMs: 5000
+  # Posts per page (API max is 20 on this endpoint).
+  pageLimit: 20
+  # Delay between page fetches during the initial backfill.
+  backfillDelayMs: 400
+  # Safety cap for the backfill loop, 0 = unlimited.
+  maxBackfillPages: 0
+  # Poll the newest page while idle.
+  idlePage: 1
+
+star:
+  # Number of paid reactions to send per post.
+  count: 1
+  # If true, do not actually spend stars (dry run). Comments are also skipped.
+  dryRun: false
+
+comment:
+  # Whether to leave a confirmation comment after a successful star.
+  enabled: true
+  # Text substituted into `{text}`.
+  text: "выдал"
+  # Template used for the comment body.
+  # Available placeholders: {user_id} {username} {text} {stars} {link}
+  template: '[user="{user_id}"]{username}[/user], {text}'
+
+database:
+  # Env DB_PATH overrides this.
+  path: ./data/star.db
+
+telegram:
+  # Env TG_SESSION_PATH overrides this.
+  sessionPath: ./data/tg.session
+
+rateLimit:
+  # GET budget is 300 r / 60 s on the forum API.
+  read:
+    capacity: 260
+    refillPerMs: 0.004
+    minIntervalMs: 250
+    reserve: 15
+  # Writes (POST) budget is 30 r / 60 s. We stay well below it.
+  write:
+    capacity: 24
+    refillPerMs: 0.00035
+    minIntervalMs: 2500
+    reserve: 5
+
+retry:
+  maxAttempts: 3
+  baseDelayMs: 1000
+  maxDelayMs: 30000
+
+logging:
+  # Env LOG_LEVEL overrides this.
+  level: info
+  # Pretty, human readable console output. Env LOG_PRETTY overrides this.
+  pretty: true
