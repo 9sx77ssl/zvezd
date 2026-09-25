@@ -1,5 +1,7 @@
 # ------------------------------------------------------------------
 # Lolz Star Bot — runtime configuration (no secrets here, see .env)
+#
+# Everything is in plain human units: seconds, minutes, counts.
 # ------------------------------------------------------------------
 
 forum:
@@ -9,36 +11,57 @@ forum:
   threadId: 10335815
   # Per-request timeout.
   requestTimeoutMs: 15000
-  # Listing order. `natural_reverse` puts the pinned first post + newest posts on page 1,
-  # which is exactly what the poller wants.
+  # `natural_reverse` keeps the pinned first post + newest posts on page 1.
   order: natural_reverse
 
 polling:
-  # How often to poll page 1 once the backlog is drained.
-  intervalMs: 5000
-  # Posts per page (API max is 20 on this endpoint).
+  # How often (ms) to check the newest page for new posts.
+  intervalMs: 15000
+  # Posts per request (max 20).
   pageLimit: 20
-  # Delay between page fetches during the initial backfill.
-  backfillDelayMs: 400
-  # Safety cap for the backfill loop, 0 = unlimited.
+  # Pause (ms) between page fetches while walking the backlog.
+  pageDelayMs: 5000
+  # Pause (ms) after each handled post before moving to the next one.
+  postDelayMs: 5000
+  # Safety cap for the backlog walk, 0 = unlimited.
   maxBackfillPages: 0
-  # Poll the newest page while idle.
+  # Page that carries the newest posts.
   idlePage: 1
 
+pacing:
+  # Wait (ms) between sending a star and writing the confirmation comment.
+  starToCommentMs: 5000
+
+balance:
+  # While out of stars, how often (ms) to re-check the Telegram balance.
+  checkIntervalMs: 60000
+
 star:
-  # Number of paid reactions to send per post.
+  # Stars per post.
   count: 1
-  # If true, do not actually spend stars (dry run). Comments are also skipped.
+  # Env DRY_RUN / `bun run dry` overrides this: simulate, spend nothing.
   dryRun: false
 
 comment:
-  # Whether to leave a confirmation comment after a successful star.
   enabled: true
-  # Text substituted into `{text}`.
+  # Substituted into `{text}`.
   text: "+"
-  # Template used for the comment body.
-  # Available placeholders: {user_id} {username} {text} {stars} {link}
+  # Placeholders: {user_id} {username} {text} {stars} {link}
   template: '[user="{user_id}"]{username}[/user], {text}'
+
+rateLimit:
+  # Forum GET budget per minute (server allows 300). Keep a margin.
+  readPerMinute: 240
+  # Forum POST budget per minute (server allows 30). Keep a margin.
+  writePerMinute: 20
+
+retry:
+  # Max attempts for a request before giving up.
+  attempts: 3
+  # Base retry delay (ms); grows exponentially with jitter.
+  delayMs: 1000
+  # Ceiling for retry delays (ms).
+  maxDelayMs: 30000
 
 database:
   # Env DB_PATH overrides this.
@@ -48,27 +71,6 @@ telegram:
   # Env TG_SESSION_PATH overrides this.
   sessionPath: ./data/tg.session
 
-rateLimit:
-  # GET budget is 300 r / 60 s on the forum API.
-  read:
-    capacity: 260
-    refillPerMs: 0.004
-    minIntervalMs: 250
-    reserve: 15
-  # Writes (POST) budget is 30 r / 60 s. We stay well below it.
-  write:
-    capacity: 24
-    refillPerMs: 0.00035
-    minIntervalMs: 2500
-    reserve: 5
-
-retry:
-  maxAttempts: 3
-  baseDelayMs: 1000
-  maxDelayMs: 30000
-
 logging:
-  # Env LOG_LEVEL overrides this.
   level: info
-  # Pretty, human readable console output. Env LOG_PRETTY overrides this.
   pretty: true

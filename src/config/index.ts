@@ -12,12 +12,14 @@ export interface AppConfig {
     token: string;
   };
   polling: FileConfig['polling'];
+  pacing: FileConfig['pacing'];
+  balance: FileConfig['balance'];
   star: FileConfig['star'];
   comment: FileConfig['comment'];
-  database: { path: string };
-  telegram: { sessionPath: string; apiId: number; apiHash: string };
   rateLimit: FileConfig['rateLimit'];
   retry: FileConfig['retry'];
+  database: { path: string };
+  telegram: { sessionPath: string; apiId: number; apiHash: string };
   logging: FileConfig['logging'];
 }
 
@@ -76,12 +78,16 @@ export function loadConfig(configPath = 'config.yml'): AppConfig {
       ...values.polling,
       intervalMs: envValues.POLL_INTERVAL_MS ?? values.polling.intervalMs,
     },
+    pacing: values.pacing,
+    balance: values.balance,
     star: {
       ...values.star,
       count: envValues.STAR_COUNT ?? values.star.count,
       dryRun: envValues.DRY_RUN ?? values.star.dryRun,
     },
     comment: values.comment,
+    rateLimit: values.rateLimit,
+    retry: values.retry,
     database: {
       path: envValues.DB_PATH ?? values.database.path,
     },
@@ -90,8 +96,6 @@ export function loadConfig(configPath = 'config.yml'): AppConfig {
       apiId: envValues.TG_API_ID,
       apiHash: envValues.TG_API_HASH,
     },
-    rateLimit: values.rateLimit,
-    retry: values.retry,
     logging: {
       level: envValues.LOG_LEVEL ?? values.logging.level,
       pretty: envValues.LOG_PRETTY ?? values.logging.pretty,

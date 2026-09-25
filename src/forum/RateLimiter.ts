@@ -18,6 +18,23 @@ export interface ServerRateLimit {
 }
 
 /**
+ * Builds a limiter from a human-friendly "requests per minute" value.
+ * Keeps a safety reserve and never lets requests bunch up.
+ */
+export function rateLimiterFromPerMinute(perMinute: number, name: string): RateLimiter {
+  const rate = Math.max(1, Math.floor(perMinute));
+  return new RateLimiter(
+    {
+      capacity: rate,
+      refillPerMs: rate / 60_000,
+      minIntervalMs: Math.ceil(60_000 / rate),
+      reserve: Math.max(1, Math.ceil(rate * 0.06)),
+    },
+    name,
+  );
+}
+
+/**
  * Token bucket rate limiter that also honours the server-provided
  * `system_info.rate_limit` on every response. Requests are serialized so the
  * bucket can never be oversold by concurrent callers.

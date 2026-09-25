@@ -12,11 +12,30 @@ export const fileConfigSchema = z.object({
   }),
   polling: z
     .object({
-      intervalMs: z.number().int().positive().default(5_000),
+      /** How often the newest page is checked for new posts. */
+      intervalMs: z.number().int().min(1_000).default(15_000),
+      /** Posts fetched per request (API max is 20). */
       pageLimit: z.number().int().min(1).max(20).default(20),
-      backfillDelayMs: z.number().int().min(0).default(400),
+      /** Pause between page fetches while walking the backlog. */
+      pageDelayMs: z.number().int().min(0).default(5_000),
+      /** Pause after each handled post before moving to the next one. */
+      postDelayMs: z.number().int().min(0).default(5_000),
+      /** Safety cap for the backlog walk, 0 = unlimited. */
       maxBackfillPages: z.number().int().min(0).default(0),
+      /** Page that carries the newest posts. */
       idlePage: z.number().int().positive().default(1),
+    })
+    .prefault({}),
+  pacing: z
+    .object({
+      /** Pause between sending a star and writing the confirmation comment. */
+      starToCommentMs: z.number().int().min(0).default(5_000),
+    })
+    .prefault({}),
+  balance: z
+    .object({
+      /** While out of stars, how often to re-check the Telegram balance. */
+      checkIntervalMs: z.number().int().min(5_000).default(60_000),
     })
     .prefault({}),
   star: z
@@ -28,8 +47,26 @@ export const fileConfigSchema = z.object({
   comment: z
     .object({
       enabled: z.boolean().default(true),
-      text: z.string().default('выдал'),
+      text: z.string().default('+'),
       template: z.string().default('[user="{user_id}"]{username}[/user], {text}'),
+    })
+    .prefault({}),
+  rateLimit: z
+    .object({
+      /** Forum GET budget per minute (server allows 300). */
+      readPerMinute: z.number().int().positive().default(240),
+      /** Forum POST budget per minute (server allows 30). */
+      writePerMinute: z.number().int().positive().default(20),
+    })
+    .prefault({}),
+  retry: z
+    .object({
+      /** Max attempts for a request before giving up. */
+      attempts: z.number().int().min(1).default(3),
+      /** Base delay for retries (grows exponentially with jitter). */
+      delayMs: z.number().int().positive().default(1_000),
+      /** Ceiling for retry delays. */
+      maxDelayMs: z.number().int().positive().default(30_000),
     })
     .prefault({}),
   database: z
@@ -40,33 +77,6 @@ export const fileConfigSchema = z.object({
   telegram: z
     .object({
       sessionPath: z.string().default('./data/tg.session'),
-    })
-    .prefault({}),
-  rateLimit: z
-    .object({
-      read: z
-        .object({
-          capacity: z.number().positive().default(260),
-          refillPerMs: z.number().positive().default(0.004),
-          minIntervalMs: z.number().int().min(0).default(250),
-          reserve: z.number().int().min(0).default(15),
-        })
-        .prefault({}),
-      write: z
-        .object({
-          capacity: z.number().positive().default(24),
-          refillPerMs: z.number().positive().default(0.00035),
-          minIntervalMs: z.number().int().min(0).default(2_500),
-          reserve: z.number().int().min(0).default(5),
-        })
-        .prefault({}),
-    })
-    .prefault({}),
-  retry: z
-    .object({
-      maxAttempts: z.number().int().min(1).default(3),
-      baseDelayMs: z.number().int().positive().default(1_000),
-      maxDelayMs: z.number().int().positive().default(30_000),
     })
     .prefault({}),
   logging: z
@@ -94,7 +104,7 @@ export const envSchema = z.object({
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),
   STAR_COUNT: z.coerce.number().int().positive().optional(),
-  POLL_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).optional(),
   DRY_RUN: z
     .string()
     .optional()

@@ -16,8 +16,8 @@ import {
 } from './types';
 
 export interface RetryOptions {
-  maxAttempts: number;
-  baseDelayMs: number;
+  attempts: number;
+  delayMs: number;
   maxDelayMs: number;
 }
 
@@ -119,7 +119,7 @@ export class ForumClient {
     const limiter = method === 'GET' ? this.readLimiter : this.writeLimiter;
     let lastError: unknown;
 
-    for (let attempt = 1; attempt <= this.retry.maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= this.retry.attempts; attempt++) {
       await limiter.acquire();
       try {
         return await this.execute(method, path, options, schema);
@@ -132,7 +132,7 @@ export class ForumClient {
           method,
           path,
           attempt,
-          maxAttempts: this.retry.maxAttempts,
+          maxAttempts: this.retry.attempts,
           delayMs: decision.delayMs,
           ...errorToLog(err),
         });
@@ -144,19 +144,22 @@ export class ForumClient {
   }
 
   private retryDecision(err: unknown, attempt: number): { retry: boolean; delayMs: number } {
-    if (attempt >= this.retry.maxAttempts) return { retry: false, delayMs: 0 };
+    if (attempt >= this.retry.attempts) return { retry: false, delayMs: 0 };
 
     if (err instanceof ForumRateLimitError) {
       const delayMs = Math.max(0, err.retryAt.getTime() - Date.now());
-      return { retry: true, delayMs: Math.max(delayMs, this.retry.baseDelayMs) };
+      return { retry: true, delayMs: Math.max(delayMs, this.retry.delayMs) };
     }
 
     if (err instanceof ForumApiError) {
-      // Only server-side failures are worth retrying.
-      return err.status >= 500
+      // 5xx = server failure; 403/408/425 = the forum's anti-flood / transient
+      // throttling (it returns 403 instead of 429 for rapid writes).
+      const retryable =
+        err.status >= 500 || err.status === 403 || err.status === 408 || err.status === 425;
+      return retryable
         ? {
             retry: true,
-            delayMs: backoffDelay(attempt, this.retry.baseDelayMs, this.retry.maxDelayMs),
+            delayMs: backoffDelay(attempt, this.retry.delayMs, this.retry.maxDelayMs),
           }
         : { retry: false, delayMs: 0 };
     }
@@ -164,7 +167,7 @@ export class ForumClient {
     // Network errors, timeouts, unexpected exceptions.
     return {
       retry: true,
-      delayMs: backoffDelay(attempt, this.retry.baseDelayMs, this.retry.maxDelayMs),
+      delayMs: backoffDelay(attempt, this.retry.delayMs, this.retry.maxDelayMs),
     };
   }
 
