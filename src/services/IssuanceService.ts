@@ -1,4 +1,5 @@
 import type { AppConfig } from '../config';
+import { sleep } from '../core/async';
 import { ForumApiError, PermanentError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
@@ -9,7 +10,14 @@ import type { TelegramService } from '../telegram/TelegramService';
 import { renderComment } from './comment-renderer';
 
 export type IssuanceOutcome =
-  | { kind: 'processed'; postId: number; username: string; link: string; commentId: number | null }
+  | {
+      kind: 'processed';
+      postId: number;
+      username: string;
+      link: string;
+      commentId: number | null;
+      balance?: number;
+    }
   | { kind: 'already'; postId: number; status: string }
   | { kind: 'ignored'; postId: number; reason: string }
   | { kind: 'skipped'; postId: number; reason: string }
@@ -103,7 +111,7 @@ export class IssuanceService {
       if (record.status === 'failed' && record.skipReason === 'permanent') {
         return { kind: 'already', postId, status: 'failed_permanent' };
       }
-      if (record.attempts >= this.config.retry.maxAttempts) {
+      if (record.attempts >= this.config.retry.attempts) {
         return { kind: 'already', postId, status: 'attempts_exhausted' };
       }
     }
@@ -121,8 +129,12 @@ export class IssuanceService {
     this.repository.bumpAttempts(postId);
 
     try {
+      let balance: number | undefined;
       if (record.status !== 'star_sent') {
-        await this.issueStar(post, link.url, log);
+        balance = await this.issueStar(post, link.url, log);
+        if (this.config.pacing.starToCommentMs > 0) {
+          await sleep(this.config.pacing.starToCommentMs);
+        }
       }
       const commentId = await this.writeComment(post, link.url, log);
       return {
@@ -131,6 +143,7 @@ export class IssuanceService {
         username: post.poster_username,
         link: link.url,
         commentId,
+        balance,
       };
     } catch (err) {
       const permanent = this.isPermanent(err);
@@ -150,23 +163,38 @@ export class IssuanceService {
     }
   }
 
-  private async issueStar(post: ForumPost, link: string, log: Logger): Promise<void> {
+  private async issueStar(post: ForumPost, link: string, log: Logger): Promise<number> {
     const resolved = await this.telegram.resolvePost(link);
     if (!resolved) {
       throw new PermanentError(`Telegram post is not resolvable: ${link}`);
+    }
+
+    const expected = this.config.star.count;
+
+    // Safety net against double charging: if a previous attempt actually went
+    // through (e.g. an ambiguous network failure), do not send it again.
+    const alreadyOwned = await this.telegram.getOwnPaidReactionCount(
+      resolved.chatId,
+      resolved.messageId,
+    );
+    if (alreadyOwned >= expected) {
+      this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+      const balance = await this.telegram.getBalance();
+      log.info('Star already present, not sending again', { link, alreadyOwned, balance });
+      return balance;
     }
 
     log.info('Sending star reaction', {
       link,
       chatId: resolved.chatId,
       messageId: resolved.messageId,
-      count: this.config.star.count,
+      count: expected,
     });
 
     const result = await this.telegram.sendStarReaction(
       resolved.chatId,
       resolved.messageId,
-      this.config.star.count,
+      expected,
     );
 
     this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
@@ -175,8 +203,11 @@ export class IssuanceService {
     log.info('Star confirmed', {
       link,
       paidReactions: result.paidReactions,
+      ownCount: result.ownCount,
       balance,
     });
+
+    return balance;
   }
 
   private async writeComment(post: ForumPost, link: string, log: Logger): Promise<number | null> {
@@ -207,7 +238,10 @@ export class IssuanceService {
 
   private isPermanent(err: unknown): boolean {
     if (err instanceof PermanentError) return true;
-    if (err instanceof ForumApiError) return err.status < 500 && err.status !== 429;
+    if (err instanceof ForumApiError) {
+      // 403 is the forum's anti-flood response, so it stays retryable.
+      return err.status === 400 || err.status === 401 || err.status === 404 || err.status === 422;
+    }
     return false;
   }
 }
