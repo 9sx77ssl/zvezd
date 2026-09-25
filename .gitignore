@@ -13,3 +13,7 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# reference dumps provided by the user
+forum.json
+resp.json
