@@ -41,6 +41,13 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    version: 3,
+    name: 'add_star_baseline',
+    sql: `
+      ALTER TABLE issuances ADD COLUMN tg_baseline INTEGER;
+    `,
+  },
 ];
 
 /**

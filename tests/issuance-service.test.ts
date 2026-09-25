@@ -11,7 +11,7 @@ interface SetupOptions {
   config?: AppConfig;
   commentFailsOnce?: boolean;
   resolveNull?: boolean;
-  alreadyOwnedCount?: number;
+  ownedCount?: number;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -21,14 +21,16 @@ function setup(options: SetupOptions = {}) {
   const telegram = {
     sendCalls: 0,
     resolveCalls: 0,
+    ownedCount: options.ownedCount ?? 0,
     resolvePost: async () => {
       telegram.resolveCalls += 1;
       return options.resolveNull ? null : { chatId: -100123, messageId: 25, message: {} as never };
     },
-    getOwnPaidReactionCount: async () => options.alreadyOwnedCount ?? 0,
+    getOwnPaidReactionCount: async () => telegram.ownedCount,
     sendStarReaction: async () => {
       telegram.sendCalls += 1;
-      return { paidReactions: 1, ownCount: 1 };
+      telegram.ownedCount += 1;
+      return { paidReactions: 1, ownCount: telegram.ownedCount };
     },
     getBalance: async () => 100,
   };
@@ -173,13 +175,39 @@ describe('IssuanceService', () => {
     expect(repository.findByPostId(108)?.status).toBe('commented');
   });
 
-  it('does not double-charge when the star is already present', async () => {
-    const { service, repository, telegram } = setup({ alreadyOwnedCount: 1 });
+  it('allows the same Telegram post to be starred again on a later submission', async () => {
+    const { service, telegram, repository } = setup();
 
-    const outcome = await service.process(makePost({ post_id: 109 }));
+    const first = await service.process(makePost({ post_id: 109 }));
+    expect(first).toMatchObject({ kind: 'processed' });
+    expect(telegram.sendCalls).toBe(1);
+
+    // Same TG link, but a brand new forum post (e.g. the next day).
+    const second = await service.process(makePost({ post_id: 110 }));
+    expect(second).toMatchObject({ kind: 'processed' });
+    expect(telegram.sendCalls).toBe(2);
+    expect(repository.findByPostId(110)?.tgBaseline).toBe(1);
+  });
+
+  it('does not charge again when the star already went through for the same submission', async () => {
+    const { service, repository, telegram } = setup();
+
+    // Simulate a crash right after the star was sent but before it was recorded:
+    // reserve the post, store baseline 0, and pretend our star now exists.
+    repository.reserve({
+      threadId: 1,
+      postId: 111,
+      posterUserId: 42,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/flexinout/25',
+    });
+    repository.setStarBaseline(111, 0);
+    telegram.ownedCount = 1;
+
+    const outcome = await service.process(makePost({ post_id: 111 }));
 
     expect(outcome).toMatchObject({ kind: 'processed' });
     expect(telegram.sendCalls).toBe(0);
-    expect(repository.findByPostId(109)?.status).toBe('commented');
+    expect(repository.findByPostId(111)?.status).toBe('commented');
   });
 });

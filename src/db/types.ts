@@ -9,6 +9,8 @@ export interface IssuanceRecord {
   tgLink: string | null;
   tgChatId: string | null;
   tgMessageId: number | null;
+  /** Our paid-reaction count on the TG post before the first attempt for this forum post. */
+  tgBaseline: number | null;
   status: IssuanceStatus;
   skipReason: string | null;
   error: string | null;

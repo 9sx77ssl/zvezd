@@ -10,6 +10,7 @@ interface IssuanceRow {
   tg_link: string | null;
   tg_chat_id: string | null;
   tg_message_id: number | null;
+  tg_baseline: number | null;
   status: string;
   skip_reason: string | null;
   error: string | null;
@@ -31,6 +32,7 @@ function mapRow(row: IssuanceRow): IssuanceRecord {
     tgLink: row.tg_link,
     tgChatId: row.tg_chat_id,
     tgMessageId: row.tg_message_id,
+    tgBaseline: row.tg_baseline,
     status: row.status as IssuanceStatus,
     skipReason: row.skip_reason,
     error: row.error,
@@ -86,6 +88,13 @@ export class IssuanceRepository {
     this.db
       .query('UPDATE issuances SET attempts = attempts + 1, updated_at = ? WHERE post_id = ?')
       .run(Date.now(), postId);
+  }
+
+  /** Store the pre-send paid-reaction baseline for idempotent star issuance. */
+  setStarBaseline(postId: number, baseline: number): void {
+    this.db
+      .query('UPDATE issuances SET tg_baseline = ?, updated_at = ? WHERE post_id = ?')
+      .run(baseline, Date.now(), postId);
   }
 
   markStarSent(postId: number, chatId: string, messageId: number): void {

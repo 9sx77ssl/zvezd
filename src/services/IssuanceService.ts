@@ -3,6 +3,7 @@ import { sleep } from '../core/async';
 import { ForumApiError, PermanentError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
+import type { IssuanceRecord } from '../db/types';
 import type { ForumClient } from '../forum/ForumClient';
 import type { ForumPost } from '../forum/types';
 import { selectFirstTgPostLink } from '../telegram/link-parser';
@@ -131,7 +132,7 @@ export class IssuanceService {
     try {
       let balance: number | undefined;
       if (record.status !== 'star_sent') {
-        balance = await this.issueStar(post, link.url, log);
+        balance = await this.issueStar(post, link.url, log, record);
         if (this.config.pacing.starToCommentMs > 0) {
           await sleep(this.config.pacing.starToCommentMs);
         }
@@ -163,7 +164,12 @@ export class IssuanceService {
     }
   }
 
-  private async issueStar(post: ForumPost, link: string, log: Logger): Promise<number> {
+  private async issueStar(
+    post: ForumPost,
+    link: string,
+    log: Logger,
+    record: IssuanceRecord,
+  ): Promise<number> {
     const resolved = await this.telegram.resolvePost(link);
     if (!resolved) {
       throw new PermanentError(`Telegram post is not resolvable: ${link}`);
@@ -171,16 +177,28 @@ export class IssuanceService {
 
     const expected = this.config.star.count;
 
-    // Safety net against double charging: if a previous attempt actually went
-    // through (e.g. an ambiguous network failure), do not send it again.
-    const alreadyOwned = await this.telegram.getOwnPaidReactionCount(
+    // The baseline is how many of our paid reactions were on this exact
+    // Telegram message *before* the first attempt for THIS forum post.
+    // It lets the same TG post be starred again on a later submission while
+    // keeping a retry of the very same submission idempotent.
+    const current = await this.telegram.getOwnPaidReactionCount(
       resolved.chatId,
       resolved.messageId,
     );
-    if (alreadyOwned >= expected) {
+    if (record.tgBaseline === null) {
+      this.repository.setStarBaseline(post.post_id, current);
+    }
+    const baseline = record.tgBaseline ?? current;
+
+    if (current >= baseline + expected) {
       this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
       const balance = await this.telegram.getBalance();
-      log.info('Star already present, not sending again', { link, alreadyOwned, balance });
+      log.info('Star already sent for this submission, not charging again', {
+        link,
+        current,
+        baseline,
+        balance,
+      });
       return balance;
     }
 
@@ -189,6 +207,7 @@ export class IssuanceService {
       chatId: resolved.chatId,
       messageId: resolved.messageId,
       count: expected,
+      baseline,
     });
 
     const result = await this.telegram.sendStarReaction(
