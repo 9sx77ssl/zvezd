@@ -56,7 +56,7 @@ export class IssuanceService {
 
   async process(post: ForumPost): Promise<IssuanceOutcome> {
     const postId = post.post_id;
-    const log = this.logger.child('', { postId, username: post.poster_username });
+    const log = this.logger.child('Post', { postId, username: post.poster_username });
 
     if (post.post_is_first_post) return { kind: 'ignored', postId, reason: 'first_post' };
     if (post.post_is_deleted) return { kind: 'ignored', postId, reason: 'deleted' };
@@ -67,15 +67,10 @@ export class IssuanceService {
 
     const link = selectFirstTgPostLink(post.post_body_html);
     if (!link) {
-      const created = this.repository.reserve({
-        threadId: post.thread_id,
-        postId,
-        posterUserId: post.poster_user_id,
-        posterUsername: post.poster_username,
-        tgLink: null,
-      });
-      if (created) this.repository.markSkipped(postId, 'no_tg_link');
-      return { kind: 'skipped', postId, reason: 'no_tg_link' };
+      // Not persisted: users sometimes edit a post to add the link, so we
+      // simply re-check it on the next poll.
+      log.debug('Post has no Telegram link yet');
+      return { kind: 'ignored', postId, reason: 'no_tg_link' };
     }
 
     if (this.config.star.dryRun) {

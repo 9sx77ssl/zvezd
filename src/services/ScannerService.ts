@@ -137,7 +137,7 @@ export class ScannerService {
       await this.interruptibleSleep(this.config.polling.backfillDelayMs);
     }
 
-    if (!completed) {
+    if (!completed && !this.config.star.dryRun) {
       this.state.setBool(STATE_BACKFILL_COMPLETED, true);
       this.logger.info('Full backfill finished, marker stored');
     }

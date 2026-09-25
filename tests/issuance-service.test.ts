@@ -95,15 +95,16 @@ describe('IssuanceService', () => {
     expect(repository.findByPostId(101)?.skipReason).toBe('comments_present');
   });
 
-  it('skips posts without a Telegram link', async () => {
-    const { service, telegram } = setup();
+  it('ignores posts without a Telegram link (re-checked on next poll)', async () => {
+    const { service, telegram, repository } = setup();
 
     const outcome = await service.process(
       makePost({ post_id: 102, post_body_html: '<div>nope</div>' }),
     );
 
-    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'no_tg_link' });
+    expect(outcome).toMatchObject({ kind: 'ignored', reason: 'no_tg_link' });
     expect(telegram.sendCalls).toBe(0);
+    expect(repository.findByPostId(102)).toBeNull();
   });
 
   it('ignores the first post and its own posts', async () => {
