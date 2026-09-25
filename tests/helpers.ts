@@ -1,0 +1,57 @@
+import type { AppConfig } from '../src/config';
+import { Logger } from '../src/core/logger';
+import type { ForumPost } from '../src/forum/types';
+
+export const testLogger = Logger.create({ level: 'fatal', pretty: false });
+
+export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+  const base: AppConfig = {
+    forum: {
+      baseUrl: 'https://api.lolz.team',
+      threadId: 1,
+      requestTimeoutMs: 1_000,
+      order: 'natural_reverse',
+      token: 'test-token',
+    },
+    polling: {
+      intervalMs: 1_000,
+      pageLimit: 20,
+      backfillDelayMs: 0,
+      maxBackfillPages: 0,
+      idlePage: 1,
+    },
+    star: { count: 1, dryRun: false },
+    comment: {
+      enabled: true,
+      text: 'выдал',
+      template: '[user="{user_id}"]{username}[/user], {text}',
+    },
+    database: { path: ':memory:' },
+    telegram: { sessionPath: ':memory:', apiId: 1, apiHash: 'hash' },
+    rateLimit: {
+      read: { capacity: 100, refillPerMs: 1, minIntervalMs: 0, reserve: 0 },
+      write: { capacity: 100, refillPerMs: 1, minIntervalMs: 0, reserve: 0 },
+    },
+    retry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 2 },
+    logging: { level: 'fatal', pretty: false },
+  };
+
+  return { ...base, ...overrides };
+}
+
+export function makePost(overrides: Partial<ForumPost> = {}): ForumPost {
+  return {
+    post_id: 100,
+    thread_id: 1,
+    poster_user_id: 4371739,
+    poster_username: 'intimacy',
+    post_create_date: 1_700_000_000,
+    post_body: '[MEDIA=telegram]flexinout/25[/MEDIA]',
+    post_body_html: '<a href="https://t.me/flexinout/25">https://t.me/flexinout/25</a>',
+    post_body_plain_text: '[MEDIA]',
+    post_is_first_post: false,
+    post_is_published: true,
+    post_is_deleted: false,
+    ...overrides,
+  };
+}
