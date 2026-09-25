@@ -12,6 +12,7 @@ interface SetupOptions {
   commentFailsOnce?: boolean;
   resolveNull?: boolean;
   ownedCount?: number;
+  existingOwnComment?: boolean | 'after-failure';
 }
 
 function setup(options: SetupOptions = {}) {
@@ -36,6 +37,7 @@ function setup(options: SetupOptions = {}) {
   };
 
   let failComment = options.commentFailsOnce ?? false;
+  let getCommentsCalls = 0;
   const forum = {
     commentCalls: 0,
     createComment: async (postId: number) => {
@@ -51,6 +53,25 @@ function setup(options: SetupOptions = {}) {
           poster_user_id: 1,
           poster_username: 'bot',
         },
+      };
+    },
+    getComments: async (postId: number) => {
+      getCommentsCalls += 1;
+      const show =
+        options.existingOwnComment === true ||
+        (options.existingOwnComment === 'after-failure' && getCommentsCalls > 1);
+      return {
+        comments: show
+          ? [
+              {
+                post_comment_id: 777,
+                post_id: postId,
+                poster_user_id: 1,
+                poster_username: 'bot',
+                post_comment_body: '[user="4371739"]intimacy[/user], +',
+              },
+            ]
+          : [],
       };
     },
   };
@@ -209,5 +230,28 @@ describe('IssuanceService', () => {
     expect(outcome).toMatchObject({ kind: 'processed' });
     expect(telegram.sendCalls).toBe(0);
     expect(repository.findByPostId(111)?.status).toBe('commented');
+  });
+
+  it('does not post a duplicate when a comment already exists', async () => {
+    const { service, repository, forum } = setup({ existingOwnComment: true });
+
+    const outcome = await service.process(makePost({ post_id: 112 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed', commentId: 777 });
+    expect(forum.commentCalls).toBe(0);
+    expect(repository.findByPostId(112)?.status).toBe('commented');
+  });
+
+  it('verifies and adopts a comment that went through despite an error', async () => {
+    const { service, repository, forum } = setup({
+      commentFailsOnce: true,
+      existingOwnComment: 'after-failure',
+    });
+
+    const outcome = await service.process(makePost({ post_id: 113 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed', commentId: 777 });
+    expect(forum.commentCalls).toBe(1);
+    expect(repository.findByPostId(113)?.status).toBe('commented');
   });
 });

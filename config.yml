@@ -10,7 +10,7 @@ forum:
   # Thread to watch. Env FORUM_THREAD_ID overrides this.
   threadId: 10335815
   # Per-request timeout.
-  requestTimeoutMs: 15000
+  requestTimeoutMs: 30000
   # `natural_reverse` keeps the pinned first post + newest posts on page 1.
   order: natural_reverse
 
@@ -31,6 +31,8 @@ polling:
 pacing:
   # Wait (ms) between sending a star and writing the confirmation comment.
   starToCommentMs: 5000
+  # Wait (ms) before verifying a comment that errored (forum can be slow).
+  commentVerifyDelayMs: 3000
 
 balance:
   # While out of stars, how often (ms) to re-check the Telegram balance.

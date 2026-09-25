@@ -128,7 +128,7 @@ export class ForumClient {
         return await this.execute(method, path, options, schema);
       } catch (err) {
         lastError = err;
-        const decision = this.retryDecision(err, attempt);
+        const decision = this.retryDecision(err, attempt, method);
         if (!decision.retry) throw err;
 
         this.logger.warn('Forum request failed, retrying', {
@@ -146,13 +146,22 @@ export class ForumClient {
     throw lastError;
   }
 
-  private retryDecision(err: unknown, attempt: number): { retry: boolean; delayMs: number } {
+  private retryDecision(
+    err: unknown,
+    attempt: number,
+    method: 'GET' | 'POST',
+  ): { retry: boolean; delayMs: number } {
     if (attempt >= this.retry.attempts) return { retry: false, delayMs: 0 };
 
     if (err instanceof ForumRateLimitError) {
       const delayMs = Math.max(0, err.retryAt.getTime() - Date.now());
       return { retry: true, delayMs: Math.max(delayMs, this.retry.delayMs) };
     }
+
+    // Writes are not idempotent: an ambiguous failure (timeout, connection
+    // reset, 5xx) may still have been applied server-side. Never auto-retry
+    // them here; the caller verifies and the issuance state machine retries.
+    if (method === 'POST') return { retry: false, delayMs: 0 };
 
     if (err instanceof ForumApiError) {
       // 5xx = server failure; 403/408/425 = the forum's anti-flood / transient

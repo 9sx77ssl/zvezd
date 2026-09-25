@@ -30,6 +30,8 @@ export const fileConfigSchema = z.object({
     .object({
       /** Pause between sending a star and writing the confirmation comment. */
       starToCommentMs: z.number().int().min(0).default(5_000),
+      /** Wait before verifying a comment that errored (slow forum responses). */
+      commentVerifyDelayMs: z.number().int().min(0).default(3_000),
     })
     .prefault({}),
   balance: z

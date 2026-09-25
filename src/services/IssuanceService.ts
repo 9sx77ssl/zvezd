@@ -243,16 +243,56 @@ export class IssuanceService {
       link,
     });
 
-    const response = await this.forum.createComment(post.post_id, body);
-    const commentId = response.comment.post_comment_id;
-    if (!commentId) {
-      throw new Error('Forum did not return a comment id');
+    // Never comment twice on the same forum post, even if a previous attempt
+    // failed ambiguously (the forum can be slow and lose responses).
+    const preexisting = await this.findOwnComment(post.post_id);
+    if (preexisting !== null) {
+      this.repository.markCommented(post.post_id, preexisting);
+      log.warn('Comment already present, not posting again', { commentId: preexisting });
+      return preexisting;
     }
 
-    this.repository.markCommented(post.post_id, commentId);
-    log.info('Confirmation comment posted', { commentId, body });
+    try {
+      const response = await this.forum.createComment(post.post_id, body);
+      const commentId = response.comment.post_comment_id;
+      if (!commentId) {
+        throw new Error('Forum did not return a comment id');
+      }
 
-    return commentId;
+      this.repository.markCommented(post.post_id, commentId);
+      log.info('Confirmation comment posted', { commentId, body });
+      return commentId;
+    } catch (err) {
+      // The write may have actually succeeded (slow/lost response). Give the
+      // forum a moment, then check before letting the retry post a duplicate.
+      await sleep(this.config.pacing.commentVerifyDelayMs);
+      const existing = await this.findOwnComment(post.post_id);
+      if (existing !== null) {
+        this.repository.markCommented(post.post_id, existing);
+        log.warn('Comment already exists despite the error; not posting again', {
+          commentId: existing,
+          ...errorToLog(err),
+        });
+        return existing;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Finds our own comment on a forum post, if any. Our bot is the only one
+   * commenting through this mechanism, so any comment by `selfForumUserId`
+   * means this post was already confirmed.
+   */
+  private async findOwnComment(postId: number): Promise<number | null> {
+    try {
+      const { comments } = await this.forum.getComments(postId);
+      const mine = [...comments].reverse().find((c) => c.poster_user_id === this.selfForumUserId);
+      return mine?.post_comment_id ?? null;
+    } catch (err) {
+      this.logger.warn('Could not read existing comments', { postId, ...errorToLog(err) });
+      return null;
+    }
   }
 
   private isPermanent(err: unknown): boolean {
