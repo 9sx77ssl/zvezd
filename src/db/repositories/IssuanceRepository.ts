@@ -84,6 +84,23 @@ export class IssuanceRepository {
     return row ? mapRow(row) : null;
   }
 
+  /**
+   * Posts that still need work: not started, star sent but comment missing,
+   * or a retryable failure. Used by the startup targeted-retry pass so deep
+   * pages are not rescanned.
+   */
+  listPending(): IssuanceRecord[] {
+    const rows = this.db
+      .query<IssuanceRow, []>(`
+        SELECT * FROM issuances
+        WHERE status IN ('pending', 'star_sent')
+           OR (status = 'failed' AND skip_reason = 'retryable')
+        ORDER BY post_id ASC
+      `)
+      .all();
+    return rows.map(mapRow);
+  }
+
   bumpAttempts(postId: number): void {
     this.db
       .query('UPDATE issuances SET attempts = attempts + 1, updated_at = ? WHERE post_id = ?')

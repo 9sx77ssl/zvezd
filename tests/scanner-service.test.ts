@@ -14,6 +14,7 @@ interface SetupOptions {
   completed?: boolean;
   outcomeFor?: (post: ForumPost, page: number) => OutcomeKind;
   stopOnEmptyPage?: boolean;
+  pageOfPost?: Record<number, ForumPost[]>;
 }
 
 function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
@@ -23,11 +24,21 @@ function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
   if (options.completed) state.setBool('backfill_completed', true);
 
   const requestedPages: number[] = [];
+  const requestedPageOfPost: number[] = [];
   const processed: number[] = [];
   let scanner: ScannerService;
 
   const forum = {
-    getPosts: async ({ page }: { page: number }) => {
+    getPosts: async (params: { page?: number; pageOfPostId?: number }) => {
+      if (params.pageOfPostId !== undefined) {
+        requestedPageOfPost.push(params.pageOfPostId);
+        return {
+          posts: options.pageOfPost?.[params.pageOfPostId] ?? [],
+          posts_total: 99,
+          links: { pages: 5, page: 1 },
+        };
+      }
+      const page = params.page ?? 1;
       requestedPages.push(page);
       const posts = pages[page] ?? [];
       if (posts.length === 0 && options.stopOnEmptyPage) scanner.stop();
@@ -74,7 +85,21 @@ function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
     ).walkPages(full, context);
   };
 
-  return { scanner, walk, requestedPages, processed, state };
+  const retryPending = () => {
+    (scanner as unknown as { running: boolean }).running = true;
+    return (scanner as unknown as { retryPending: () => Promise<void> }).retryPending();
+  };
+
+  return {
+    scanner,
+    walk,
+    retryPending,
+    requestedPages,
+    requestedPageOfPost,
+    processed,
+    state,
+    repository,
+  };
 }
 
 const p = (id: number) => makePost({ post_id: id });
@@ -129,5 +154,30 @@ describe('ScannerService page walking', () => {
 
     expect(requestedPages).toEqual([1, 2]);
     expect(state.getBool('backfill_completed')).toBe(true);
+  });
+
+  it('retries unfinished posts via page_of_post_id without rescanning the thread', async () => {
+    const { retryPending, requestedPageOfPost, processed, repository } = setup(
+      { 1: [p(1)] },
+      {
+        completed: true,
+        pageOfPost: { 999: [p(999), p(1000)] },
+        outcomeFor: () => 'processed',
+      },
+    );
+
+    // A deep post that was left unfinished by a previous run.
+    repository.reserve({
+      threadId: 1,
+      postId: 999,
+      posterUserId: 1,
+      posterUsername: 'deep',
+      tgLink: null,
+    });
+
+    await retryPending();
+
+    expect(requestedPageOfPost).toEqual([999]);
+    expect(processed).toEqual([999]);
   });
 });

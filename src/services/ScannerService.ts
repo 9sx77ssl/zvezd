@@ -73,6 +73,8 @@ export class ScannerService {
       this.logger.info('Backfill finished, marker stored');
     }
 
+    await this.retryPending();
+
     await this.pollLoop();
   }
 
@@ -190,6 +192,55 @@ export class ScannerService {
 
       const elapsed = Date.now() - startedAt;
       await this.interruptibleSleep(Math.max(0, interval - elapsed));
+    }
+  }
+
+  /**
+   * Retries unfinished posts without rescanning the whole thread. Each pending
+   * post's page is resolved via `page_of_post_id`, so old pages are only
+   * fetched when they actually still have work.
+   */
+  private async retryPending(): Promise<void> {
+    const pending = this.repository.listPending();
+    if (pending.length === 0) return;
+
+    const pendingIds = new Set(pending.map((record) => record.postId));
+    const attempted = new Set<number>();
+    this.logger.info('Retrying unfinished posts', { count: pending.length });
+
+    for (const record of pending) {
+      if (!this.running) return;
+      if (attempted.has(record.postId)) continue;
+
+      await this.ensureSufficientStars();
+      if (!this.running) return;
+
+      try {
+        const response = await this.forum.getPosts({
+          threadId: this.config.forum.threadId,
+          pageOfPostId: record.postId,
+          limit: this.config.polling.pageLimit,
+          order: this.config.forum.order,
+        });
+
+        for (const post of response.posts) {
+          if (!this.running) return;
+          if (!pendingIds.has(post.post_id) || attempted.has(post.post_id)) continue;
+          attempted.add(post.post_id);
+
+          const outcome = await this.issuance.process(post);
+          if (outcome.kind === 'processed' && outcome.balance !== undefined) {
+            this.balance = outcome.balance;
+          }
+          await this.interruptibleSleep(this.config.polling.postDelayMs);
+        }
+      } catch (err) {
+        attempted.add(record.postId);
+        this.logger.warn('Could not retry pending post', {
+          postId: record.postId,
+          ...errorToLog(err),
+        });
+      }
     }
   }
 

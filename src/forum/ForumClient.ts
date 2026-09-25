@@ -33,9 +33,11 @@ export interface ForumClientOptions {
 
 export interface GetPostsParams {
   threadId: number;
-  page: number;
+  page?: number;
   limit: number;
   order: string;
+  /** Fetch the page that contains this post. `threadId` may be omitted then. */
+  pageOfPostId?: number;
 }
 
 interface RequestOptions {
@@ -82,6 +84,7 @@ export class ForumClient {
           page: params.page,
           limit: params.limit,
           order: params.order,
+          page_of_post_id: params.pageOfPostId,
         },
       },
       postsResponseSchema,

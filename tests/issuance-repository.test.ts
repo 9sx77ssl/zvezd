@@ -90,4 +90,21 @@ describe('IssuanceRepository', () => {
     expect(repo.isEmpty()).toBe(false);
     expect(repo.stats()).toMatchObject({ total: 2, pending: 1, commented: 1 });
   });
+
+  it('lists posts that still need work', () => {
+    const base = { threadId: 1, posterUserId: 1, posterUsername: 'a', tgLink: null };
+    repo.reserve({ ...base, postId: 1 });
+    repo.reserve({ ...base, postId: 2 });
+    repo.markStarSent(2, '-100', 5);
+    repo.reserve({ ...base, postId: 3 });
+    repo.markCommented(3, 10);
+    repo.reserve({ ...base, postId: 4 });
+    repo.markFailed(4, 'boom', true);
+    repo.reserve({ ...base, postId: 5 });
+    repo.markFailed(5, 'nope', false);
+    repo.reserve({ ...base, postId: 6 });
+    repo.markSkipped(6, 'comments_present');
+
+    expect(repo.listPending().map((record) => record.postId)).toEqual([1, 2, 4]);
+  });
 });
