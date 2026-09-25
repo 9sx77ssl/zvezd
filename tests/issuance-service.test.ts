@@ -24,6 +24,7 @@ interface SetupOptions {
   ownedCount?: number;
   existingComments?: CommentRow[];
   adoptAfterFailure?: boolean;
+  sendThrowsButApplied?: boolean;
 }
 
 const isAd = (body: string): boolean => body.trimStart().startsWith('[ad=');
@@ -44,6 +45,11 @@ function setup(options: SetupOptions = {}) {
     sendStarReaction: async () => {
       telegram.sendCalls += 1;
       telegram.ownedCount += 1;
+      if (options.sendThrowsButApplied) {
+        throw new Error(
+          'Type assertion failed: expected updateMessageReactions, got updateEditChannelMessage',
+        );
+      }
       return { paidReactions: 1, ownCount: telegram.ownedCount };
     },
     getBalance: async () => 100,
@@ -328,5 +334,16 @@ describe('IssuanceService', () => {
     expect(confirmationCount(forum.createdBodies)).toBe(0);
     expect(adCount(forum.createdBodies)).toBe(1);
     expect(repository.findByPostId(115)?.status).toBe('commented');
+  });
+
+  it('recovers when the star send throws but the reaction was applied', async () => {
+    const { service, repository, telegram, forum } = setup({ sendThrowsButApplied: true });
+
+    const outcome = await service.process(makePost({ post_id: 116 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed', commentId: 555, adCommentId: 556 });
+    expect(telegram.sendCalls).toBe(1);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(repository.findByPostId(116)?.status).toBe('commented');
   });
 });

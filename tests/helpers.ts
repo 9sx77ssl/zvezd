@@ -22,7 +22,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       maxBackfillPages: 0,
       idlePage: 1,
     },
-    pacing: { starToCommentMs: 0, commentToAdMs: 0, commentVerifyDelayMs: 0 },
+    pacing: { starToCommentMs: 0, commentToAdMs: 0, starVerifyDelayMs: 0, commentVerifyDelayMs: 0 },
     balance: { checkIntervalMs: 60_000 },
     star: { count: 1, dryRun: false },
     comment: {

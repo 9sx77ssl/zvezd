@@ -33,6 +33,8 @@ pacing:
   starToCommentMs: 5000
   # Wait (ms) between the confirmation comment and the ad comment.
   commentToAdMs: 5000
+  # Wait (ms) before verifying a star reaction whose send threw.
+  starVerifyDelayMs: 2000
   # Wait (ms) before verifying a comment that errored (forum can be slow).
   commentVerifyDelayMs: 3000
 

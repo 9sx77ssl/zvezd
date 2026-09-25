@@ -33,6 +33,8 @@ export const fileConfigSchema = z.object({
       starToCommentMs: z.number().int().min(0).default(5_000),
       /** Pause between the confirmation comment and the ad comment. */
       commentToAdMs: z.number().int().min(0).default(5_000),
+      /** Wait before verifying a star reaction whose send threw. */
+      starVerifyDelayMs: z.number().int().min(0).default(2_000),
       /** Wait before verifying a comment that errored (slow forum responses). */
       commentVerifyDelayMs: z.number().int().min(0).default(3_000),
     })

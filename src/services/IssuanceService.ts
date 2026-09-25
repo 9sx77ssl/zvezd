@@ -232,23 +232,47 @@ export class IssuanceService {
       baseline,
     });
 
-    const result = await this.telegram.sendStarReaction(
-      resolved.chatId,
-      resolved.messageId,
-      expected,
-    );
+    try {
+      const result = await this.telegram.sendStarReaction(
+        resolved.chatId,
+        resolved.messageId,
+        expected,
+      );
 
-    this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+      this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
 
-    const balance = await this.telegram.getBalance();
-    log.info('Star confirmed', {
-      link,
-      paidReactions: result.paidReactions,
-      ownCount: result.ownCount,
-      balance,
-    });
+      const balance = await this.telegram.getBalance();
+      log.info('Star confirmed', {
+        link,
+        paidReactions: result.paidReactions,
+        ownCount: result.ownCount,
+        balance,
+      });
 
-    return balance;
+      return balance;
+    } catch (err) {
+      // mtcute can throw a benign assertion error (e.g. Telegram returned an
+      // `updateEditChannelMessage` instead of `updateMessageReactions`) even
+      // though the reaction was applied. Verify before treating it as failed.
+      await sleep(this.config.pacing.starVerifyDelayMs);
+      const after = await this.telegram.getOwnPaidReactionCount(
+        resolved.chatId,
+        resolved.messageId,
+      );
+      if (after >= baseline + expected) {
+        this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+        const balance = await this.telegram.getBalance();
+        log.warn('Star send threw but the reaction is present; treating as sent', {
+          link,
+          after,
+          baseline,
+          balance,
+          ...errorToLog(err),
+        });
+        return balance;
+      }
+      throw err;
+    }
   }
 
   private async writeConfirmation(
