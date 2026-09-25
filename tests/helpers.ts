@@ -1,4 +1,5 @@
 import type { AppConfig } from '../src/config';
+import { DEFAULT_AD_TEMPLATE } from '../src/config/defaults';
 import { Logger } from '../src/core/logger';
 import type { ForumPost } from '../src/forum/types';
 
@@ -21,13 +22,14 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       maxBackfillPages: 0,
       idlePage: 1,
     },
-    pacing: { starToCommentMs: 0, commentVerifyDelayMs: 0 },
+    pacing: { starToCommentMs: 0, commentToAdMs: 0, commentVerifyDelayMs: 0 },
     balance: { checkIntervalMs: 60_000 },
     star: { count: 1, dryRun: false },
     comment: {
       enabled: true,
       text: '+',
       template: '[user="{user_id}"]{username}[/user], {text}',
+      ad: { enabled: true, template: DEFAULT_AD_TEMPLATE },
     },
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },
     retry: { attempts: 3, delayMs: 1, maxDelayMs: 2 },

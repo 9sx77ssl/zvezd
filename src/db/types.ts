@@ -1,4 +1,10 @@
-export type IssuanceStatus = 'pending' | 'star_sent' | 'commented' | 'skipped' | 'failed';
+export type IssuanceStatus =
+  | 'pending'
+  | 'star_sent'
+  | 'confirmed'
+  | 'commented'
+  | 'skipped'
+  | 'failed';
 
 export interface IssuanceRecord {
   id: number;
@@ -16,7 +22,9 @@ export interface IssuanceRecord {
   error: string | null;
   attempts: number;
   commentId: number | null;
+  adCommentId: number | null;
   starSentAt: number | null;
+  confirmedAt: number | null;
   commentedAt: number | null;
   createdAt: number;
   updatedAt: number;

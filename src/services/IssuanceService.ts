@@ -17,6 +17,7 @@ export type IssuanceOutcome =
       username: string;
       link: string;
       commentId: number | null;
+      adCommentId: number | null;
       balance?: number;
     }
   | { kind: 'already'; postId: number; status: string }
@@ -35,16 +36,20 @@ export interface IssuanceServiceDeps {
 
 /**
  * The heart of the bot: processes a single forum post through the strict
- * `star -> confirm -> comment` state machine.
+ * state machine:
+ *
+ *   star -> confirmation comment -> ad comment
  *
  * Every step is persisted before the next one begins, so a crash (or a lost
- * database) can never charge the same post twice within a normal run:
+ * database) can never charge the same post twice, and an interrupted run only
+ * repeats the missing steps:
  *
- *   pending  -> claimed the post, nothing done yet
- *   star_sent-> star confirmed, comment still missing (retry only comments)
- *   commented-> fully done (terminal)
- *   skipped  -> intentionally not processed (terminal)
- *   failed   -> retryable or permanent failure
+ *   pending   -> claimed the post, nothing done yet
+ *   star_sent -> star confirmed, comments missing
+ *   confirmed -> confirmation comment posted, ad missing
+ *   commented -> fully done (terminal)
+ *   skipped   -> intentionally not processed (terminal)
+ *   failed    -> retryable or permanent failure
  */
 export class IssuanceService {
   private readonly config: AppConfig;
@@ -131,19 +136,32 @@ export class IssuanceService {
 
     try {
       let balance: number | undefined;
-      if (record.status !== 'star_sent') {
+
+      const needsStar = record.status !== 'star_sent' && record.status !== 'confirmed';
+      if (needsStar) {
         balance = await this.issueStar(post, link.url, log, record);
         if (this.config.pacing.starToCommentMs > 0) {
           await sleep(this.config.pacing.starToCommentMs);
         }
       }
-      const commentId = await this.writeComment(post, link.url, log);
+
+      let commentId: number | null = record.commentId;
+      if (record.status !== 'confirmed') {
+        commentId = await this.writeConfirmation(post, link.url, log);
+        if (this.config.pacing.commentToAdMs > 0) {
+          await sleep(this.config.pacing.commentToAdMs);
+        }
+      }
+
+      const adCommentId = await this.writeAd(post, link.url, log);
+
       return {
         kind: 'processed',
         postId,
         username: post.poster_username,
         link: link.url,
         commentId,
+        adCommentId,
         balance,
       };
     } catch (err) {
@@ -151,10 +169,14 @@ export class IssuanceService {
       const current = this.repository.findByPostId(postId);
       const message = err instanceof Error ? err.message : String(err);
 
-      // A star was already charged and only the comment failed: keep
-      // `star_sent` so the next run retries the comment, never the star.
-      if (current?.status === 'star_sent' && !permanent) {
-        log.warn('Comment failed after star, will retry comment only', errorToLog(err));
+      // A star or the confirmation comment was already done and only a later
+      // step failed: keep the intermediate status so the next run retries just
+      // the missing steps, never the star.
+      if ((current?.status === 'star_sent' || current?.status === 'confirmed') && !permanent) {
+        log.warn('Issuance step failed, will retry the remaining steps', {
+          status: current.status,
+          ...errorToLog(err),
+        });
         return { kind: 'failed', postId, retryable: true, error: message };
       }
 
@@ -229,47 +251,83 @@ export class IssuanceService {
     return balance;
   }
 
-  private async writeComment(post: ForumPost, link: string, log: Logger): Promise<number | null> {
+  private async writeConfirmation(
+    post: ForumPost,
+    link: string,
+    log: Logger,
+  ): Promise<number | null> {
     if (!this.config.comment.enabled) {
+      this.repository.markConfirmed(post.post_id, null);
+      return null;
+    }
+
+    const body = this.renderBody(this.config.comment.template, post, link);
+
+    const existing = await this.findOwnCommentByBody(post.post_id, body);
+    if (existing !== null) {
+      this.repository.markConfirmed(post.post_id, existing);
+      log.warn('Confirmation comment already present, not posting again', { commentId: existing });
+      return existing;
+    }
+
+    const commentId = await this.postComment(post, body, log, 'confirmation');
+    this.repository.markConfirmed(post.post_id, commentId);
+    return commentId;
+  }
+
+  private async writeAd(post: ForumPost, link: string, log: Logger): Promise<number | null> {
+    if (!this.config.comment.ad.enabled) {
       this.repository.markCommented(post.post_id, null);
       return null;
     }
 
-    const body = renderComment(this.config.comment.template, {
+    const body = this.renderBody(this.config.comment.ad.template, post, link);
+
+    const existing = await this.findOwnCommentByBody(post.post_id, body);
+    if (existing !== null) {
+      this.repository.markCommented(post.post_id, existing);
+      log.warn('Ad comment already present, not posting again', { adCommentId: existing });
+      return existing;
+    }
+
+    const adCommentId = await this.postComment(post, body, log, 'ad');
+    this.repository.markCommented(post.post_id, adCommentId);
+    return adCommentId;
+  }
+
+  private renderBody(template: string, post: ForumPost, link: string): string {
+    return renderComment(template, {
       user_id: post.poster_user_id,
       username: post.poster_username,
       text: this.config.comment.text,
       stars: this.config.star.count,
       link,
     });
+  }
 
-    // Never comment twice on the same forum post, even if a previous attempt
-    // failed ambiguously (the forum can be slow and lose responses).
-    const preexisting = await this.findOwnComment(post.post_id);
-    if (preexisting !== null) {
-      this.repository.markCommented(post.post_id, preexisting);
-      log.warn('Comment already present, not posting again', { commentId: preexisting });
-      return preexisting;
-    }
-
+  /**
+   * Posts a comment with duplicate protection. The forum can be slow and lose
+   * the response even though the write succeeded, so a failed attempt is
+   * followed by a check for the exact body before the retry can post again.
+   */
+  private async postComment(
+    post: ForumPost,
+    body: string,
+    log: Logger,
+    kind: 'confirmation' | 'ad',
+  ): Promise<number> {
     try {
       const response = await this.forum.createComment(post.post_id, body);
       const commentId = response.comment.post_comment_id;
-      if (!commentId) {
-        throw new Error('Forum did not return a comment id');
-      }
-
-      this.repository.markCommented(post.post_id, commentId);
-      log.info('Confirmation comment posted', { commentId, body });
+      if (!commentId) throw new Error('Forum did not return a comment id');
+      log.info('Comment posted', { kind, commentId, body });
       return commentId;
     } catch (err) {
-      // The write may have actually succeeded (slow/lost response). Give the
-      // forum a moment, then check before letting the retry post a duplicate.
       await sleep(this.config.pacing.commentVerifyDelayMs);
-      const existing = await this.findOwnComment(post.post_id);
+      const existing = await this.findOwnCommentByBody(post.post_id, body);
       if (existing !== null) {
-        this.repository.markCommented(post.post_id, existing);
         log.warn('Comment already exists despite the error; not posting again', {
+          kind,
           commentId: existing,
           ...errorToLog(err),
         });
@@ -280,14 +338,21 @@ export class IssuanceService {
   }
 
   /**
-   * Finds our own comment on a forum post, if any. Our bot is the only one
-   * commenting through this mechanism, so any comment by `selfForumUserId`
-   * means this post was already confirmed.
+   * Finds our own comment with an exact body match. Matching the body (rather
+   * than just the author) distinguishes the confirmation comment from the ad
+   * comment on the same post.
    */
-  private async findOwnComment(postId: number): Promise<number | null> {
+  private async findOwnCommentByBody(postId: number, body: string): Promise<number | null> {
     try {
       const { comments } = await this.forum.getComments(postId);
-      const mine = [...comments].reverse().find((c) => c.poster_user_id === this.selfForumUserId);
+      const normalized = body.trim();
+      const mine = [...comments]
+        .reverse()
+        .find(
+          (comment) =>
+            comment.poster_user_id === this.selfForumUserId &&
+            comment.post_comment_body.trim() === normalized,
+        );
       return mine?.post_comment_id ?? null;
     } catch (err) {
       this.logger.warn('Could not read existing comments', { postId, ...errorToLog(err) });

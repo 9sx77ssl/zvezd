@@ -31,6 +31,8 @@ polling:
 pacing:
   # Wait (ms) between sending a star and writing the confirmation comment.
   starToCommentMs: 5000
+  # Wait (ms) between the confirmation comment and the ad comment.
+  commentToAdMs: 5000
   # Wait (ms) before verifying a comment that errored (forum can be slow).
   commentVerifyDelayMs: 3000
 
@@ -46,10 +48,21 @@ star:
 
 comment:
   enabled: true
-  # Substituted into `{text}`.
+  # Substituted into `{text}` of the confirmation comment.
   text: "+"
   # Placeholders: {user_id} {username} {text} {stars} {link}
   template: '[user="{user_id}"]{username}[/user], {text}'
+  # Second comment under every post — an advertisement. Fully configurable.
+  ad:
+    enabled: true
+    template: |-
+      [ad=align=center][B][tooltip=5]Zelenka[/tooltip] Work  — задания за деньги[/B]
+
+      Подписки, отзывы, регистрации, комментарии — от 2 до 60 ₽ за штуку.
+      Больше 150 активных заданий, новые появляются каждый день.
+      Вывод от 1000 ₽: карта, крипта, СБП или Steam через [URL='https://lzt.market']lzt.market[/URL] .
+
+      [URL='https://zelenka.work/?ref=lolz_cucumber'][B]zelenka.work[/B][/URL][B]  [/B][/ad]
 
 rateLimit:
   # Forum GET budget per minute (server allows 300). Keep a margin.

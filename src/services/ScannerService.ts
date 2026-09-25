@@ -93,6 +93,7 @@ export class ScannerService {
       starCount: this.config.star.count,
       dryRun: this.config.star.dryRun,
       commentsEnabled: this.config.comment.enabled,
+      adCommentEnabled: this.config.comment.ad.enabled,
       starsBalance: this.balance,
       database: this.config.database.path,
       issuances: this.repository.stats(),

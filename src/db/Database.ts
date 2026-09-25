@@ -48,6 +48,14 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       ALTER TABLE issuances ADD COLUMN tg_baseline INTEGER;
     `,
   },
+  {
+    version: 4,
+    name: 'add_ad_comment',
+    sql: `
+      ALTER TABLE issuances ADD COLUMN confirmed_at INTEGER;
+      ALTER TABLE issuances ADD COLUMN ad_comment_id INTEGER;
+    `,
+  },
 ];
 
 /**

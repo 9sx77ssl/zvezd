@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_AD_TEMPLATE } from './defaults';
 
 /** Shape of `config.yml` before secrets are injected from the environment. */
 export const fileConfigSchema = z.object({
@@ -30,6 +31,8 @@ export const fileConfigSchema = z.object({
     .object({
       /** Pause between sending a star and writing the confirmation comment. */
       starToCommentMs: z.number().int().min(0).default(5_000),
+      /** Pause between the confirmation comment and the ad comment. */
+      commentToAdMs: z.number().int().min(0).default(5_000),
       /** Wait before verifying a comment that errored (slow forum responses). */
       commentVerifyDelayMs: z.number().int().min(0).default(3_000),
     })
@@ -51,6 +54,13 @@ export const fileConfigSchema = z.object({
       enabled: z.boolean().default(true),
       text: z.string().default('+'),
       template: z.string().default('[user="{user_id}"]{username}[/user], {text}'),
+      ad: z
+        .object({
+          enabled: z.boolean().default(true),
+          /** Second comment; same `{placeholder}` syntax as the confirmation. */
+          template: z.string().default(DEFAULT_AD_TEMPLATE),
+        })
+        .prefault({}),
     })
     .prefault({}),
   rateLimit: z

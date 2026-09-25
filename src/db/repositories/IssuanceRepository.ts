@@ -16,7 +16,9 @@ interface IssuanceRow {
   error: string | null;
   attempts: number;
   comment_id: number | null;
+  ad_comment_id: number | null;
   star_sent_at: number | null;
+  confirmed_at: number | null;
   commented_at: number | null;
   created_at: number;
   updated_at: number;
@@ -38,7 +40,9 @@ function mapRow(row: IssuanceRow): IssuanceRecord {
     error: row.error,
     attempts: row.attempts,
     commentId: row.comment_id,
+    adCommentId: row.ad_comment_id,
     starSentAt: row.star_sent_at,
+    confirmedAt: row.confirmed_at,
     commentedAt: row.commented_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -85,15 +89,14 @@ export class IssuanceRepository {
   }
 
   /**
-   * Posts that still need work: not started, star sent but comment missing,
-   * or a retryable failure. Used by the startup targeted-retry pass so deep
-   * pages are not rescanned.
+   * Posts that still need work: not started, star sent but comments missing,
+   * confirmation posted but ad missing, or a retryable failure.
    */
   listPending(): IssuanceRecord[] {
     const rows = this.db
       .query<IssuanceRow, []>(`
         SELECT * FROM issuances
-        WHERE status IN ('pending', 'star_sent')
+        WHERE status IN ('pending', 'star_sent', 'confirmed')
            OR (status = 'failed' AND skip_reason = 'retryable')
         ORDER BY post_id ASC
       `)
@@ -125,14 +128,26 @@ export class IssuanceRepository {
       .run(chatId, messageId, Date.now(), Date.now(), postId);
   }
 
-  markCommented(postId: number, commentId: number | null): void {
+  /** First (confirmation) comment has been posted. */
+  markConfirmed(postId: number, commentId: number | null): void {
     this.db
       .query(`
         UPDATE issuances
-        SET status = 'commented', comment_id = ?, commented_at = ?, error = NULL, updated_at = ?
+        SET status = 'confirmed', comment_id = ?, confirmed_at = ?, error = NULL, updated_at = ?
         WHERE post_id = ?
       `)
       .run(commentId, Date.now(), Date.now(), postId);
+  }
+
+  /** Terminal state: both confirmation and ad comments are done. */
+  markCommented(postId: number, adCommentId: number | null): void {
+    this.db
+      .query(`
+        UPDATE issuances
+        SET status = 'commented', ad_comment_id = ?, commented_at = ?, error = NULL, updated_at = ?
+        WHERE post_id = ?
+      `)
+      .run(adCommentId, Date.now(), Date.now(), postId);
   }
 
   markSkipped(postId: number, reason: string): void {
@@ -173,6 +188,7 @@ export class IssuanceRepository {
       total: 0,
       pending: 0,
       star_sent: 0,
+      confirmed: 0,
       commented: 0,
       skipped: 0,
       failed: 0,
