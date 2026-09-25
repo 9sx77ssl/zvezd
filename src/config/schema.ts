@@ -1,0 +1,100 @@
+import { z } from 'zod';
+
+/** Shape of `config.yml` before secrets are injected from the environment. */
+export const fileConfigSchema = z.object({
+  forum: z.object({
+    baseUrl: z.string().url().default('https://api.lolz.team'),
+    threadId: z.number().int().positive(),
+    requestTimeoutMs: z.number().int().positive().default(15_000),
+    order: z
+      .enum(['natural', 'natural_reverse', 'post_likes', 'post_likes_reverse'])
+      .default('natural_reverse'),
+  }),
+  polling: z
+    .object({
+      intervalMs: z.number().int().positive().default(5_000),
+      pageLimit: z.number().int().min(1).max(20).default(20),
+      backfillDelayMs: z.number().int().min(0).default(400),
+      maxBackfillPages: z.number().int().min(0).default(0),
+      idlePage: z.number().int().positive().default(1),
+    })
+    .prefault({}),
+  star: z
+    .object({
+      count: z.number().int().positive().default(1),
+      dryRun: z.boolean().default(false),
+    })
+    .prefault({}),
+  comment: z
+    .object({
+      enabled: z.boolean().default(true),
+      text: z.string().default('выдал'),
+      template: z.string().default('[user="{user_id}"]{username}[/user], {text}'),
+    })
+    .prefault({}),
+  database: z
+    .object({
+      path: z.string().default('./data/star.db'),
+    })
+    .prefault({}),
+  telegram: z
+    .object({
+      sessionPath: z.string().default('./data/tg.session'),
+    })
+    .prefault({}),
+  rateLimit: z
+    .object({
+      read: z
+        .object({
+          capacity: z.number().positive().default(260),
+          refillPerMs: z.number().positive().default(0.004),
+          minIntervalMs: z.number().int().min(0).default(250),
+          reserve: z.number().int().min(0).default(15),
+        })
+        .prefault({}),
+      write: z
+        .object({
+          capacity: z.number().positive().default(24),
+          refillPerMs: z.number().positive().default(0.00035),
+          minIntervalMs: z.number().int().min(0).default(2_500),
+          reserve: z.number().int().min(0).default(5),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
+  retry: z
+    .object({
+      maxAttempts: z.number().int().min(1).default(3),
+      baseDelayMs: z.number().int().positive().default(1_000),
+      maxDelayMs: z.number().int().positive().default(30_000),
+    })
+    .prefault({}),
+  logging: z
+    .object({
+      level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+      pretty: z.boolean().default(true),
+    })
+    .prefault({}),
+});
+
+export type FileConfig = z.infer<typeof fileConfigSchema>;
+
+/** Secrets and optional overrides read from the environment. */
+export const envSchema = z.object({
+  FORUM_TOKEN: z.string().min(1, 'FORUM_TOKEN is required'),
+  TG_API_ID: z.coerce.number().int().positive('TG_API_ID must be a positive integer'),
+  TG_API_HASH: z.string().min(1, 'TG_API_HASH is required'),
+  FORUM_BASE_URL: z.string().url().optional(),
+  FORUM_THREAD_ID: z.coerce.number().int().positive().optional(),
+  DB_PATH: z.string().optional(),
+  TG_SESSION_PATH: z.string().optional(),
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).optional(),
+  LOG_PRETTY: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  STAR_COUNT: z.coerce.number().int().positive().optional(),
+  POLL_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+});
+
+export type Env = z.infer<typeof envSchema>;
