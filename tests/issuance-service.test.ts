@@ -11,6 +11,7 @@ interface SetupOptions {
   config?: AppConfig;
   commentFailsOnce?: boolean;
   resolveNull?: boolean;
+  alreadyOwnedCount?: number;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -24,9 +25,10 @@ function setup(options: SetupOptions = {}) {
       telegram.resolveCalls += 1;
       return options.resolveNull ? null : { chatId: -100123, messageId: 25, message: {} as never };
     },
+    getOwnPaidReactionCount: async () => options.alreadyOwnedCount ?? 0,
     sendStarReaction: async () => {
       telegram.sendCalls += 1;
-      return { paidReactions: 1 };
+      return { paidReactions: 1, ownCount: 1 };
     },
     getBalance: async () => 100,
   };
@@ -169,5 +171,15 @@ describe('IssuanceService', () => {
     expect(outcome).toMatchObject({ kind: 'processed', commentId: null });
     expect(forum.commentCalls).toBe(0);
     expect(repository.findByPostId(108)?.status).toBe('commented');
+  });
+
+  it('does not double-charge when the star is already present', async () => {
+    const { service, repository, telegram } = setup({ alreadyOwnedCount: 1 });
+
+    const outcome = await service.process(makePost({ post_id: 109 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(repository.findByPostId(109)?.status).toBe('commented');
   });
 });

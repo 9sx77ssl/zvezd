@@ -16,23 +16,23 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     polling: {
       intervalMs: 1_000,
       pageLimit: 20,
-      backfillDelayMs: 0,
+      pageDelayMs: 0,
+      postDelayMs: 0,
       maxBackfillPages: 0,
       idlePage: 1,
     },
+    pacing: { starToCommentMs: 0 },
+    balance: { checkIntervalMs: 60_000 },
     star: { count: 1, dryRun: false },
     comment: {
       enabled: true,
-      text: 'выдал',
+      text: '+',
       template: '[user="{user_id}"]{username}[/user], {text}',
     },
+    rateLimit: { readPerMinute: 240, writePerMinute: 20 },
+    retry: { attempts: 3, delayMs: 1, maxDelayMs: 2 },
     database: { path: ':memory:' },
     telegram: { sessionPath: ':memory:', apiId: 1, apiHash: 'hash' },
-    rateLimit: {
-      read: { capacity: 100, refillPerMs: 1, minIntervalMs: 0, reserve: 0 },
-      write: { capacity: 100, refillPerMs: 1, minIntervalMs: 0, reserve: 0 },
-    },
-    retry: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 2 },
     logging: { level: 'fatal', pretty: false },
   };
 
