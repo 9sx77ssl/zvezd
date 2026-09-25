@@ -79,6 +79,7 @@ export function loadConfig(configPath = 'config.yml'): AppConfig {
     star: {
       ...values.star,
       count: envValues.STAR_COUNT ?? values.star.count,
+      dryRun: envValues.DRY_RUN ?? values.star.dryRun,
     },
     comment: values.comment,
     database: {

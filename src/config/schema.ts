@@ -95,6 +95,10 @@ export const envSchema = z.object({
     .transform((value) => (value === undefined ? undefined : value === 'true')),
   STAR_COUNT: z.coerce.number().int().positive().optional(),
   POLL_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  DRY_RUN: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
 });
 
 export type Env = z.infer<typeof envSchema>;

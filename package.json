@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "bun run src/index.ts",
+    "dry": "DRY_RUN=true bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "login": "bun run src/login.ts",
     "typecheck": "tsc --noEmit",
