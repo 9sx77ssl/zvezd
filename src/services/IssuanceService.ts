@@ -44,6 +44,7 @@ export class IssuanceService {
   private readonly repository: IssuanceRepository;
   private readonly logger: Logger;
   private readonly selfForumUserId: number;
+  private readonly dryRunReported = new Set<number>();
 
   constructor(deps: IssuanceServiceDeps) {
     this.config = deps.config;
@@ -74,11 +75,14 @@ export class IssuanceService {
     }
 
     if (this.config.star.dryRun) {
-      log.info('Dry run: would issue star', {
-        link: link.url,
-        stars: this.config.star.count,
-        comment: this.config.comment.enabled,
-      });
+      if (!this.dryRunReported.has(postId)) {
+        this.dryRunReported.add(postId);
+        log.info('Dry run: would issue star', {
+          link: link.url,
+          stars: this.config.star.count,
+          comment: this.config.comment.enabled,
+        });
+      }
       return { kind: 'skipped', postId, reason: 'dry_run' };
     }
 
