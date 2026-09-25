@@ -27,6 +27,9 @@ const STATE_BACKFILL_COMPLETED = 'backfill_completed';
  *
  * Because the listing uses `natural_reverse`, new posts always appear on
  * page 1, so polling a single page is enough once the backlog is drained.
+ *
+ * When the star balance runs out the scanner stops touching the forum and only
+ * re-checks the Telegram balance until it is topped up again.
  */
 export class ScannerService {
   private readonly config: AppConfig;
@@ -40,6 +43,7 @@ export class ScannerService {
   private running = false;
   private readonly abort = new AbortController();
   private pollCount = 0;
+  private balance: number | null = null;
 
   constructor(deps: ScannerServiceDeps) {
     this.config = deps.config;
@@ -65,13 +69,7 @@ export class ScannerService {
   }
 
   private async logStartupInfo(): Promise<void> {
-    const stats = this.repository.stats();
-    let balance: number | null = null;
-    try {
-      balance = await this.telegram.getBalance();
-    } catch (err) {
-      this.logger.warn('Could not read Telegram Stars balance', errorToLog(err));
-    }
+    await this.refreshBalance();
 
     this.logger.info('Bot started', {
       threadId: this.config.forum.threadId,
@@ -79,9 +77,9 @@ export class ScannerService {
       starCount: this.config.star.count,
       dryRun: this.config.star.dryRun,
       commentsEnabled: this.config.comment.enabled,
-      starsBalance: balance,
+      starsBalance: this.balance,
       database: this.config.database.path,
-      issuances: stats,
+      issuances: this.repository.stats(),
     });
   }
 
@@ -95,6 +93,10 @@ export class ScannerService {
     let page = 1;
 
     for (;;) {
+      if (!this.running) return;
+      await this.ensureSufficientStars();
+      if (!this.running) return;
+
       const response = await this.forum.getPosts({
         threadId: this.config.forum.threadId,
         page,
@@ -134,7 +136,7 @@ export class ScannerService {
         break;
       }
 
-      await this.interruptibleSleep(this.config.polling.backfillDelayMs);
+      await this.interruptibleSleep(this.config.polling.pageDelayMs);
     }
 
     if (!completed && !this.config.star.dryRun) {
@@ -150,6 +152,9 @@ export class ScannerService {
     while (this.running) {
       const startedAt = Date.now();
       try {
+        await this.ensureSufficientStars();
+        if (!this.running) break;
+
         const response = await this.forum.getPosts({
           threadId: this.config.forum.threadId,
           page: this.config.polling.idlePage,
@@ -162,9 +167,9 @@ export class ScannerService {
 
         const issued = outcomes.filter((outcome) => outcome.kind === 'processed').length;
         if (issued > 0) {
-          await this.logHeartbeat('Issued stars on new posts', issued);
+          this.logHeartbeat('Issued stars on new posts', issued);
         } else if (this.pollCount % heartbeatEvery === 0) {
-          await this.logHeartbeat('Idle heartbeat');
+          this.logHeartbeat('Idle heartbeat');
         }
       } catch (err) {
         this.logger.error('Poll cycle failed', errorToLog(err));
@@ -175,16 +180,48 @@ export class ScannerService {
     }
   }
 
-  private async logHeartbeat(message: string, issued = 0): Promise<void> {
-    let balance: number | null = null;
-    try {
-      balance = await this.telegram.getBalance();
-    } catch {
-      balance = null;
+  /**
+   * Stops all forum traffic while the account has too few stars, and resumes
+   * automatically once the balance is topped up.
+   */
+  private async ensureSufficientStars(): Promise<void> {
+    if (this.config.star.dryRun) return;
+
+    const required = this.config.star.count;
+    if (this.balance !== null && this.balance >= required) return;
+
+    await this.refreshBalance();
+    if (this.balance === null || this.balance >= required) return;
+
+    this.logger.warn('Not enough Telegram Stars, pausing forum polling', {
+      balance: this.balance,
+      required,
+      retryInMs: this.config.balance.checkIntervalMs,
+    });
+
+    while (this.running && (this.balance ?? 0) < required) {
+      await this.interruptibleSleep(this.config.balance.checkIntervalMs);
+      if (!this.running) return;
+      await this.refreshBalance();
     }
+
+    if (this.running) {
+      this.logger.info('Stars topped up, resuming', { balance: this.balance });
+    }
+  }
+
+  private async refreshBalance(): Promise<void> {
+    try {
+      this.balance = await this.telegram.getBalance();
+    } catch (err) {
+      this.logger.warn('Could not read Telegram Stars balance', errorToLog(err));
+    }
+  }
+
+  private logHeartbeat(message: string, issued = 0): void {
     this.logger.info(message, {
       issued,
-      starsBalance: balance,
+      starsBalance: this.balance,
       issuances: this.repository.stats(),
     });
   }
@@ -193,19 +230,32 @@ export class ScannerService {
     const outcomes: IssuanceOutcome[] = [];
     for (const post of posts) {
       if (!this.running) break;
+
+      let outcome: IssuanceOutcome;
       try {
-        outcomes.push(await this.issuance.process(post));
+        outcome = await this.issuance.process(post);
       } catch (err) {
-        outcomes.push({
+        outcome = {
           kind: 'failed',
           postId: post.post_id,
           retryable: true,
           error: err instanceof Error ? err.message : String(err),
-        });
+        };
         this.logger.error('Unhandled error while processing post', {
           postId: post.post_id,
           ...errorToLog(err),
         });
+      }
+
+      outcomes.push(outcome);
+      if (outcome.kind === 'processed' && outcome.balance !== undefined) {
+        this.balance = outcome.balance;
+      }
+
+      const actionable =
+        outcome.kind === 'processed' || outcome.kind === 'failed' || outcome.kind === 'skipped';
+      if (actionable && this.config.polling.postDelayMs > 0) {
+        await this.interruptibleSleep(this.config.polling.postDelayMs);
       }
     }
     return outcomes;

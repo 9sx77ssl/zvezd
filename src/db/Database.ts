@@ -49,6 +49,7 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
  */
 export class Database {
   private readonly db: BunDatabase;
+  private closed = false;
 
   constructor(
     path: string,
@@ -113,6 +114,8 @@ export class Database {
   }
 
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.db.close();
   }
 }

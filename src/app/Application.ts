@@ -4,7 +4,7 @@ import { Database } from '../db/Database';
 import { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import { StateRepository } from '../db/repositories/StateRepository';
 import { ForumClient } from '../forum/ForumClient';
-import { RateLimiter } from '../forum/RateLimiter';
+import { rateLimiterFromPerMinute } from '../forum/RateLimiter';
 import { IssuanceService } from '../services/IssuanceService';
 import { ScannerService } from '../services/ScannerService';
 import { TelegramService } from '../telegram/TelegramService';
@@ -67,14 +67,15 @@ export class Application {
       timeoutMs: config.forum.requestTimeoutMs,
       retry: config.retry,
       logger,
-      readLimiter: new RateLimiter(config.rateLimit.read, 'read'),
-      writeLimiter: new RateLimiter(config.rateLimit.write, 'write'),
+      readLimiter: rateLimiterFromPerMinute(config.rateLimit.readPerMinute, 'read'),
+      writeLimiter: rateLimiterFromPerMinute(config.rateLimit.writePerMinute, 'write'),
     });
 
     const telegram = new TelegramService({
       apiId: config.telegram.apiId,
       apiHash: config.telegram.apiHash,
       sessionPath: config.telegram.sessionPath,
+      retry: config.retry,
       logger,
     });
 

@@ -75,7 +75,12 @@ export class Logger {
 export function errorToLog(err: unknown): LogContext {
   if (err instanceof Error) {
     return {
-      error: { name: err.name, message: err.message, code: (err as { code?: string }).code },
+      error: {
+        name: err.name,
+        message: err.message,
+        code: (err as { code?: string }).code,
+        stack: err.stack,
+      },
     };
   }
   return { error: String(err) };
