@@ -1,5 +1,6 @@
 import { type Message, TelegramClient, tl, type User } from '@mtcute/bun';
 import { TelegramAuthError } from '../core/errors';
+import { ensureParentDir } from '../core/fs';
 import type { Logger } from '../core/logger';
 
 export interface TelegramServiceOptions {
@@ -49,6 +50,8 @@ export class TelegramService {
 
   async init(): Promise<User> {
     if (this.client) return this.self as User;
+
+    ensureParentDir(this.options.sessionPath);
 
     this.client = new TelegramClient({
       apiId: this.options.apiId,

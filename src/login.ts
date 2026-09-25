@@ -1,5 +1,6 @@
 import { TelegramClient } from '@mtcute/bun';
 import { loadConfig } from './config';
+import { ensureParentDir } from './core/fs';
 import { errorToLog, Logger } from './core/logger';
 
 /**
@@ -13,6 +14,8 @@ import { errorToLog, Logger } from './core/logger';
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = Logger.create({ level: config.logging.level, pretty: config.logging.pretty });
+
+  ensureParentDir(config.telegram.sessionPath);
 
   const client = new TelegramClient({
     apiId: config.telegram.apiId,

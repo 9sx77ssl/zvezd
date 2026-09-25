@@ -35,7 +35,7 @@ comment:
   # Whether to leave a confirmation comment after a successful star.
   enabled: true
   # Text substituted into `{text}`.
-  text: "выдал"
+  text: "+"
   # Template used for the comment body.
   # Available placeholders: {user_id} {username} {text} {stars} {link}
   template: '[user="{user_id}"]{username}[/user], {text}'

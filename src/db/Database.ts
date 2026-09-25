@@ -1,6 +1,5 @@
 import { Database as BunDatabase, type SQLQueryBindings, type Statement } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { ensureParentDir } from '../core/fs';
 import type { Logger } from '../core/logger';
 
 const MIGRATIONS: { version: number; name: string; sql: string }[] = [
@@ -56,7 +55,7 @@ export class Database {
     private readonly logger: Logger,
   ) {
     if (path !== ':memory:') {
-      mkdirSync(dirname(path), { recursive: true });
+      ensureParentDir(path);
     }
 
     this.db = new BunDatabase(path, { create: true });
