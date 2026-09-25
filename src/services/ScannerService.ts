@@ -19,14 +19,16 @@ export interface ScannerServiceDeps {
 
 const STATE_BACKFILL_COMPLETED = 'backfill_completed';
 
+type WalkContext = 'startup' | 'poll';
+
 /**
  * Drives the whole workflow:
  *
- *  1. on startup, walk the thread from page 1 to the end (backfill);
- *  2. then poll the newest page forever, picking up freshly created posts.
- *
- * Because the listing uses `natural_reverse`, new posts always appear on
- * page 1, so polling a single page is enough once the backlog is drained.
+ *  1. on startup, walk the thread from page 1 until an empty page (backfill),
+ *     or until a fully-processed page (catch-up after a restart);
+ *  2. then poll the thread forever. Each poll walks pages 1, 2, 3... and stops
+ *     as soon as it reaches a page with nothing new, so it also survives bursts
+ *     that push posts past page 1.
  *
  * When the star balance runs out the scanner stops touching the forum and only
  * re-checks the Telegram balance until it is topped up again.
@@ -58,7 +60,19 @@ export class ScannerService {
   async start(): Promise<void> {
     this.running = true;
     await this.logStartupInfo();
-    await this.backfill();
+
+    const completed = this.state.getBool(STATE_BACKFILL_COMPLETED);
+    this.logger.info(completed ? 'Starting catch-up sync' : 'Starting full backfill', {
+      fromPage: 1,
+    });
+
+    await this.walkPages(!completed, 'startup');
+
+    if (!completed && !this.config.star.dryRun) {
+      this.state.setBool(STATE_BACKFILL_COMPLETED, true);
+      this.logger.info('Backfill finished, marker stored');
+    }
+
     await this.pollLoop();
   }
 
@@ -83,19 +97,21 @@ export class ScannerService {
     });
   }
 
-  private async backfill(): Promise<void> {
-    const completed = this.state.getBool(STATE_BACKFILL_COMPLETED);
-    this.logger.info(completed ? 'Starting catch-up sync' : 'Starting full backfill', {
-      fromPage: 1,
-    });
-
+  /**
+   * Walk pages top-down.
+   *
+   * `full` = keep going until an empty page (fresh backfill). Otherwise stop at
+   * the first page that had no new/actionable posts.
+   */
+  private async walkPages(full: boolean, context: WalkContext): Promise<IssuanceOutcome[]> {
     const maxPages = this.config.polling.maxBackfillPages;
+    const collected: IssuanceOutcome[] = [];
     let page = 1;
 
     for (;;) {
-      if (!this.running) return;
+      if (!this.running) return collected;
       await this.ensureSufficientStars();
-      if (!this.running) return;
+      if (!this.running) return collected;
 
       const response = await this.forum.getPosts({
         threadId: this.config.forum.threadId,
@@ -104,44 +120,50 @@ export class ScannerService {
         order: this.config.forum.order,
       });
 
-      const posts = response.posts;
+      const posts: ForumPost[] = response.posts;
       if (posts.length === 0) {
-        this.logger.info('Backfill complete: reached empty page', { lastPage: page - 1 });
-        break;
+        if (context === 'startup') {
+          this.logger.info('Backfill complete: reached empty page', { lastPage: page - 1 });
+        }
+        return collected;
       }
 
       const outcomes = await this.processPosts(posts);
+      collected.push(...outcomes);
+
       const issued = outcomes.filter((outcome) => outcome.kind === 'processed').length;
       const activity = outcomes.filter(
         (outcome) =>
           outcome.kind === 'processed' || outcome.kind === 'failed' || outcome.kind === 'skipped',
       ).length;
 
-      this.logger.info('Backfill page processed', {
+      const pageInfo = {
         page,
         received: posts.length,
         issued,
+        activity,
         totalPages: response.links?.pages ?? null,
-      });
+      };
+      if (context === 'startup') {
+        this.logger.info('Backfill page processed', pageInfo);
+      } else {
+        this.logger.debug('Poll page processed', pageInfo);
+      }
 
-      // Already backfilled once: a fully-known page means we caught up.
-      if (completed && activity === 0) {
-        this.logger.info('Catch-up complete: reached a fully processed page', { page });
-        break;
+      if (!full && activity === 0) {
+        if (context === 'startup') {
+          this.logger.info('Catch-up complete: reached a fully processed page', { page });
+        }
+        return collected;
       }
 
       page += 1;
       if (maxPages > 0 && page > maxPages) {
-        this.logger.warn('Backfill stopped: reached maxBackfillPages', { maxPages });
-        break;
+        this.logger.warn('Page walk stopped: reached maxBackfillPages', { maxPages });
+        return collected;
       }
 
       await this.interruptibleSleep(this.config.polling.pageDelayMs);
-    }
-
-    if (!completed && !this.config.star.dryRun) {
-      this.state.setBool(STATE_BACKFILL_COMPLETED, true);
-      this.logger.info('Full backfill finished, marker stored');
     }
   }
 
@@ -152,19 +174,10 @@ export class ScannerService {
     while (this.running) {
       const startedAt = Date.now();
       try {
-        await this.ensureSufficientStars();
+        const outcomes = await this.walkPages(false, 'poll');
         if (!this.running) break;
 
-        const response = await this.forum.getPosts({
-          threadId: this.config.forum.threadId,
-          page: this.config.polling.idlePage,
-          limit: this.config.polling.pageLimit,
-          order: this.config.forum.order,
-        });
-
-        const outcomes = await this.processPosts(response.posts);
         this.pollCount += 1;
-
         const issued = outcomes.filter((outcome) => outcome.kind === 'processed').length;
         if (issued > 0) {
           this.logHeartbeat('Issued stars on new posts', issued);
