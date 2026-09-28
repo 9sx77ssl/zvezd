@@ -1,12 +1,17 @@
 import type { AppConfig } from '../config';
 import { sleep } from '../core/async';
-import { ForumApiError, PaidReactionsDisabledError, PermanentError } from '../core/errors';
+import {
+  ForumApiError,
+  NoPostsFoundError,
+  PaidReactionsDisabledError,
+  PermanentError,
+} from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import type { IssuanceRecord } from '../db/types';
 import type { ForumClient } from '../forum/ForumClient';
 import type { ForumPost } from '../forum/types';
-import { selectFirstTgPostLink } from '../telegram/link-parser';
+import { selectFirstTgLink, type TgLink } from '../telegram/link-parser';
 import type { TelegramService } from '../telegram/TelegramService';
 import { renderComment } from './comment-renderer';
 
@@ -80,7 +85,7 @@ export class IssuanceService {
       return { kind: 'ignored', postId, reason: 'own_post' };
     }
 
-    const link = selectFirstTgPostLink(post.post_body_html);
+    const link = selectFirstTgLink(post.post_body_html);
     if (!link) {
       // Not persisted: users sometimes edit a post to add the link, so we
       // simply re-check it on the next poll.
@@ -147,7 +152,7 @@ export class IssuanceService {
 
       const needsStar = record.status !== 'star_sent' && record.status !== 'confirmed';
       if (needsStar) {
-        balance = await this.issueStar(post, link.url, log, record);
+        balance = await this.issueStar(post, link, log, record);
         if (this.config.pacing.starToCommentMs > 0) {
           await sleep(this.config.pacing.starToCommentMs);
         }
@@ -174,7 +179,22 @@ export class IssuanceService {
       };
     } catch (err) {
       if (err instanceof PaidReactionsDisabledError) {
-        return this.handlePaidReactionsDisabled(post, link.url, log);
+        return this.handleNotice(
+          post,
+          link.url,
+          log,
+          this.config.comment.paidReactionsDisabledText,
+          'paid_reactions_disabled',
+        );
+      }
+      if (err instanceof NoPostsFoundError) {
+        return this.handleNotice(
+          post,
+          link.url,
+          log,
+          this.config.comment.noPostsFoundText,
+          'no_posts_found',
+        );
       }
 
       const permanent = this.isPermanent(err);
@@ -200,14 +220,11 @@ export class IssuanceService {
 
   private async issueStar(
     post: ForumPost,
-    link: string,
+    link: TgLink,
     log: Logger,
     record: IssuanceRecord,
   ): Promise<number> {
-    const resolved = await this.telegram.resolvePost(link);
-    if (!resolved) {
-      throw new PermanentError(`Telegram post is not resolvable: ${link}`);
-    }
+    const target = await this.resolveTarget(post, link, log, record);
 
     const expected = this.config.star.count;
 
@@ -215,20 +232,17 @@ export class IssuanceService {
     // Telegram message *before* the first attempt for THIS forum post.
     // It lets the same TG post be starred again on a later submission while
     // keeping a retry of the very same submission idempotent.
-    const current = await this.telegram.getOwnPaidReactionCount(
-      resolved.chatId,
-      resolved.messageId,
-    );
+    const current = await this.telegram.getOwnPaidReactionCount(target.chatId, target.messageId);
     if (record.tgBaseline === null) {
       this.repository.setStarBaseline(post.post_id, current);
     }
     const baseline = record.tgBaseline ?? current;
 
     if (current >= baseline + expected) {
-      this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+      this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
       const balance = await this.telegram.getBalance();
       log.info('Star already sent for this submission, not charging again', {
-        link,
+        link: link.url,
         current,
         baseline,
         balance,
@@ -238,31 +252,31 @@ export class IssuanceService {
 
     // The channel must accept paid reactions; otherwise we tell the user and
     // still post the ad, instead of failing forever.
-    const paidEnabled = await this.telegram.hasPaidReactions(resolved.chatId);
+    const paidEnabled = await this.telegram.hasPaidReactions(target.chatId);
     if (!paidEnabled) {
-      throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link}`);
+      throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link.url}`);
     }
 
     log.info('Sending star reaction', {
-      link,
-      chatId: resolved.chatId,
-      messageId: resolved.messageId,
+      link: link.url,
+      chatId: target.chatId,
+      messageId: target.messageId,
       count: expected,
       baseline,
     });
 
     try {
       const result = await this.telegram.sendStarReaction(
-        resolved.chatId,
-        resolved.messageId,
+        target.chatId,
+        target.messageId,
         expected,
       );
 
-      this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+      this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
 
       const balance = await this.telegram.getBalance();
       log.info('Star confirmed', {
-        link,
+        link: link.url,
         paidReactions: result.paidReactions,
         ownCount: result.ownCount,
         balance,
@@ -274,15 +288,12 @@ export class IssuanceService {
       // `updateEditChannelMessage` instead of `updateMessageReactions`) even
       // though the reaction was applied. Verify before treating it as failed.
       await sleep(this.config.pacing.starVerifyDelayMs);
-      const after = await this.telegram.getOwnPaidReactionCount(
-        resolved.chatId,
-        resolved.messageId,
-      );
+      const after = await this.telegram.getOwnPaidReactionCount(target.chatId, target.messageId);
       if (after >= baseline + expected) {
-        this.repository.markStarSent(post.post_id, String(resolved.chatId), resolved.messageId);
+        this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
         const balance = await this.telegram.getBalance();
         log.warn('Star send threw but the reaction is present; treating as sent', {
-          link,
+          link: link.url,
           after,
           baseline,
           balance,
@@ -295,9 +306,9 @@ export class IssuanceService {
 
       // The send failed and no reaction was applied. If the channel simply has
       // paid reactions disabled, tell the user instead of retrying forever.
-      const stillEnabled = await this.telegram.hasPaidReactions(resolved.chatId);
+      const stillEnabled = await this.telegram.hasPaidReactions(target.chatId);
       if (!stillEnabled) {
-        throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link}`, {
+        throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link.url}`, {
           cause: err,
         });
       }
@@ -307,25 +318,53 @@ export class IssuanceService {
   }
 
   /**
-   * The channel has paid reactions disabled. Tell the user and still post the
-   * ad, respecting the same pacing, then mark the submission terminal so we
-   * never retry it.
+   * Resolve the Telegram target for a link, persisting it so retries reuse the
+   * same message. Bare channel links resolve to the channel's latest post.
    */
-  private async handlePaidReactionsDisabled(
+  private async resolveTarget(
+    post: ForumPost,
+    link: TgLink,
+    log: Logger,
+    record: IssuanceRecord,
+  ): Promise<{ chatId: number; messageId: number }> {
+    if (record.tgChatId && record.tgMessageId) {
+      return { chatId: Number(record.tgChatId), messageId: record.tgMessageId };
+    }
+
+    if (link.kind === 'post') {
+      const resolved = await this.telegram.resolvePost(link.url);
+      if (!resolved) throw new PermanentError(`Telegram post is not resolvable: ${link.url}`);
+      this.repository.setTarget(post.post_id, String(resolved.chatId), resolved.messageId);
+      return { chatId: resolved.chatId, messageId: resolved.messageId };
+    }
+
+    const latest = await this.telegram.resolveLatestPost(link.username);
+    if (!latest) throw new NoPostsFoundError(`Channel has no posts: ${link.url}`);
+    this.repository.setTarget(post.post_id, String(latest.chatId), latest.messageId);
+    log.info('Resolved bare channel link to its latest post', {
+      channel: link.username,
+      messageId: latest.messageId,
+    });
+    return latest;
+  }
+
+  /**
+   * Tell the user something went wrong (paid reactions disabled, no posts...)
+   * and still post the ad, respecting the same pacing. Marks the submission
+   * terminal so we never retry it.
+   */
+  private async handleNotice(
     post: ForumPost,
     link: string,
     log: Logger,
+    text: string,
+    reason: string,
   ): Promise<IssuanceOutcome> {
     const postId = post.post_id;
     let commentId: number | null = null;
 
     if (this.config.comment.enabled) {
-      const noticeBody = this.renderBody(
-        this.config.comment.template,
-        post,
-        link,
-        this.config.comment.paidReactionsDisabledText,
-      );
+      const noticeBody = this.renderBody(this.config.comment.template, post, link, text);
       const existing = await this.findOwnCommentByBody(postId, noticeBody);
       commentId = existing ?? (await this.postComment(post, noticeBody, log, 'notice'));
       if (this.config.pacing.commentToAdMs > 0) {
@@ -340,14 +379,10 @@ export class IssuanceService {
       adCommentId = existing ?? (await this.postComment(post, adBody, log, 'ad'));
     }
 
-    this.repository.markPaidReactionsDisabled(postId, commentId, adCommentId);
-    log.warn('Channel has paid reactions disabled, notified the user', {
-      link,
-      commentId,
-      adCommentId,
-    });
+    this.repository.markSkippedWithComments(postId, reason, commentId, adCommentId);
+    log.warn('Notified the user and posted the ad', { link, reason, commentId, adCommentId });
 
-    return { kind: 'skipped', postId, reason: 'paid_reactions_disabled' };
+    return { kind: 'skipped', postId, reason };
   }
 
   private async writeConfirmation(

@@ -56,6 +56,8 @@ comment:
   template: '[user="{user_id}"]{username}[/user], {text}'
   # Sent instead of the usual confirmation when the channel disabled paid reactions.
   paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!'
+  # Sent when a bare channel link is submitted but the channel has no posts.
+  noPostsFoundText: 'не нашёл пост в канале, скиньте ссылку на конкретный пост!'
   # Second comment under every post — an advertisement. Fully configurable.
   ad:
     enabled: true

@@ -28,6 +28,7 @@ interface SetupOptions {
   sendThrowsButApplied?: boolean;
   paidReactionsDisabled?: boolean;
   sendThrowsPaidDisabled?: boolean;
+  latestPost?: { chatId: number; messageId: number } | null;
 }
 
 const isAd = (body: string): boolean => body.trimStart().startsWith('[ad=');
@@ -39,10 +40,17 @@ function setup(options: SetupOptions = {}) {
   const telegram = {
     sendCalls: 0,
     resolveCalls: 0,
+    latestCalls: 0,
     ownedCount: options.ownedCount ?? 0,
     resolvePost: async () => {
       telegram.resolveCalls += 1;
       return options.resolveNull ? null : { chatId: -100123, messageId: 25, message: {} as never };
+    },
+    resolveLatestPost: async () => {
+      telegram.latestCalls += 1;
+      return options.latestPost === undefined
+        ? { chatId: -100777, messageId: 42 }
+        : options.latestPost;
     },
     getOwnPaidReactionCount: async () => telegram.ownedCount,
     hasPaidReactions: async () => !options.paidReactionsDisabled,
@@ -425,5 +433,44 @@ describe('IssuanceService', () => {
     const outcome = await service.process(makePost({ post_id: 131 }));
 
     expect(outcome).toMatchObject({ kind: 'already', status: 'attempts_exhausted' });
+  });
+
+  it('stars the latest post for a bare channel link', async () => {
+    const { service, telegram, repository, forum } = setup({
+      latestPost: { chatId: -100777, messageId: 42 },
+    });
+
+    const outcome = await service.process(
+      makePost({
+        post_id: 140,
+        post_body_html: '<a href="https://t.me/flexinout">https://t.me/flexinout</a>',
+      }),
+    );
+
+    expect(outcome).toMatchObject({ kind: 'processed' });
+    expect(telegram.latestCalls).toBe(1);
+    expect(telegram.sendCalls).toBe(1);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(repository.findByPostId(140)?.status).toBe('commented');
+    expect(repository.findByPostId(140)?.tgMessageId).toBe(42);
+  });
+
+  it('notifies when a bare channel link has no posts', async () => {
+    const { service, telegram, repository, forum } = setup({ latestPost: null });
+
+    const outcome = await service.process(
+      makePost({
+        post_id: 141,
+        post_body_html: '<a href="https://t.me/emptychannel">https://t.me/emptychannel</a>',
+      }),
+    );
+
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'no_posts_found' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(forum.createdBodies[0]).toBe(
+      '[user="4371739"]intimacy[/user], не нашёл пост в канале, скиньте ссылку на конкретный пост!',
+    );
+    expect(repository.findByPostId(141)?.skipReason).toBe('no_posts_found');
   });
 });

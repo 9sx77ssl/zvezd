@@ -60,6 +60,10 @@ export const fileConfigSchema = z.object({
       paidReactionsDisabledText: z
         .string()
         .default('у вас выключены платные реакции, включите их и приходите еще!'),
+      /** Shown when a bare channel link is submitted but the channel has no posts. */
+      noPostsFoundText: z
+        .string()
+        .default('не нашёл пост в канале, скиньте ссылку на конкретный пост!'),
       ad: z
         .object({
           enabled: z.boolean().default(true),

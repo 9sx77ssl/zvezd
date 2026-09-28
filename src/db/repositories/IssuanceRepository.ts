@@ -142,6 +142,18 @@ export class IssuanceRepository {
       .run(chatId, messageId, Date.now(), Date.now(), postId);
   }
 
+  /**
+   * Persist the resolved Telegram target before we act on it, so retries stick
+   * to the same message (important for bare channel links resolved to "latest").
+   */
+  setTarget(postId: number, chatId: string, messageId: number): void {
+    this.db
+      .query(
+        'UPDATE issuances SET tg_chat_id = ?, tg_message_id = ?, updated_at = ? WHERE post_id = ?',
+      )
+      .run(chatId, messageId, Date.now(), postId);
+  }
+
   /** First (confirmation) comment has been posted. */
   markConfirmed(postId: number, commentId: number | null): void {
     this.db
@@ -175,11 +187,12 @@ export class IssuanceRepository {
   }
 
   /**
-   * Terminal state for a submission we could not star because the channel has
-   * paid reactions disabled. Stores the posted comment ids (notice + ad).
+   * Terminal state for a submission we could not star (e.g. paid reactions
+   * disabled, no posts in the channel). Stores the posted comment ids.
    */
-  markPaidReactionsDisabled(
+  markSkippedWithComments(
     postId: number,
+    reason: string,
     commentId: number | null,
     adCommentId: number | null,
   ): void {
@@ -187,11 +200,11 @@ export class IssuanceRepository {
     this.db
       .query(`
         UPDATE issuances
-        SET status = 'skipped', skip_reason = 'paid_reactions_disabled',
+        SET status = 'skipped', skip_reason = ?,
             comment_id = ?, ad_comment_id = ?, commented_at = ?, error = NULL, updated_at = ?
         WHERE post_id = ?
       `)
-      .run(commentId, adCommentId, now, now, postId);
+      .run(reason, commentId, adCommentId, now, now, postId);
   }
 
   markFailed(postId: number, error: string, retryable: boolean): void {

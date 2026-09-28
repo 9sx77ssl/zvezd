@@ -30,6 +30,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       text: '+',
       template: '[user="{user_id}"]{username}[/user], {text}',
       paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!',
+      noPostsFoundText: 'не нашёл пост в канале, скиньте ссылку на конкретный пост!',
       ad: { enabled: true, template: DEFAULT_AD_TEMPLATE },
     },
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },

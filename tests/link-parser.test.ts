@@ -2,12 +2,14 @@ import { describe, expect, it } from 'bun:test';
 import {
   extractTgPostLinks,
   parseTgPostLink,
+  selectFirstTgLink,
   selectFirstTgPostLink,
 } from '../src/telegram/link-parser';
 
 describe('link-parser', () => {
   it('parses a canonical post link', () => {
     expect(parseTgPostLink('https://t.me/flexinout/25')).toEqual({
+      kind: 'post',
       url: 'https://t.me/flexinout/25',
       username: 'flexinout',
       messageId: 25,
@@ -56,5 +58,28 @@ describe('link-parser', () => {
   it('returns null when there is no link', () => {
     expect(selectFirstTgPostLink('<div>no links here</div>')).toBeNull();
     expect(extractTgPostLinks('[MEDIA]')).toEqual([]);
+  });
+
+  it('parses bare channel links and prefers a specific post', () => {
+    expect(selectFirstTgLink('<a href="https://t.me/flexinout">x</a>')).toEqual({
+      kind: 'channel',
+      url: 'https://t.me/flexinout',
+      username: 'flexinout',
+    });
+
+    const html =
+      '<a href="https://t.me/somechannel">c</a> <a href="https://t.me/somechannel/5">p</a>';
+    expect(selectFirstTgLink(html)).toMatchObject({ kind: 'post', messageId: 5 });
+  });
+
+  it('rejects invite/private/web-preview links in channel mode', () => {
+    for (const link of [
+      'https://t.me/+AbCdEf',
+      'https://t.me/joinchat/AbCdEf',
+      'https://t.me/c/123456/789',
+      'https://t.me/s/newsnarika/5',
+    ]) {
+      expect(selectFirstTgLink(link)).toBeNull();
+    }
   });
 });

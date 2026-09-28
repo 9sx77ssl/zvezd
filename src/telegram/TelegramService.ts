@@ -145,6 +145,20 @@ export class TelegramService {
     });
   }
 
+  /**
+   * Resolve a bare channel link to its latest non-service post.
+   * Returns `null` when the channel has no posts.
+   */
+  resolveLatestPost(username: string): Promise<{ chatId: number; messageId: number } | null> {
+    return this.withRetry('resolveLatestPost', async () => {
+      const peer = await this.client!.resolvePeer(username);
+      const history = await this.client!.getHistory(peer, { limit: 5 });
+      const message = history.find((item) => !item.isService) ?? null;
+      if (!message) return null;
+      return { chatId: message.chat.id, messageId: message.id };
+    });
+  }
+
   /** Whether the channel accepts paid (star) reactions. `true` if unknown. */
   hasPaidReactions(chatId: number): Promise<boolean> {
     return this.withRetry('hasPaidReactions', async () => {

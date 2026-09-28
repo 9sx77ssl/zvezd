@@ -69,3 +69,10 @@ export class PaidReactionsDisabledError extends AppError {
     super(message, 'PAID_REACTIONS_DISABLED', options);
   }
 }
+
+/** A bare channel link was submitted but the channel has no posts. */
+export class NoPostsFoundError extends AppError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'NO_POSTS_FOUND', options);
+  }
+}
