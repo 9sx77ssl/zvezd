@@ -167,6 +167,26 @@ export class IssuanceRepository {
       .run(reason, Date.now(), postId);
   }
 
+  /**
+   * Terminal state for a submission we could not star because the channel has
+   * paid reactions disabled. Stores the posted comment ids (notice + ad).
+   */
+  markPaidReactionsDisabled(
+    postId: number,
+    commentId: number | null,
+    adCommentId: number | null,
+  ): void {
+    const now = Date.now();
+    this.db
+      .query(`
+        UPDATE issuances
+        SET status = 'skipped', skip_reason = 'paid_reactions_disabled',
+            comment_id = ?, ad_comment_id = ?, commented_at = ?, error = NULL, updated_at = ?
+        WHERE post_id = ?
+      `)
+      .run(commentId, adCommentId, now, now, postId);
+  }
+
   markFailed(postId: number, error: string, retryable: boolean): void {
     this.db
       .query(`

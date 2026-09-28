@@ -145,6 +145,22 @@ export class TelegramService {
     });
   }
 
+  /** Whether the channel accepts paid (star) reactions. `true` if unknown. */
+  hasPaidReactions(chatId: number): Promise<boolean> {
+    return this.withRetry('hasPaidReactions', async () => {
+      try {
+        const full = await this.client!.getFullChat(chatId);
+        return full.hasPaidReactions;
+      } catch (err) {
+        this.logger.debug('Could not read paid-reaction setting, assuming enabled', {
+          chatId,
+          ...errorToLog(err),
+        });
+        return true;
+      }
+    });
+  }
+
   /**
    * Send `count` paid star reactions to a message.
    *

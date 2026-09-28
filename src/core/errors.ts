@@ -62,3 +62,10 @@ export class PermanentError extends AppError {
     super(message, 'PERMANENT_ERROR', options);
   }
 }
+
+/** The target channel has paid (star) reactions disabled. */
+export class PaidReactionsDisabledError extends AppError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'PAID_REACTIONS_DISABLED', options);
+  }
+}

@@ -56,6 +56,10 @@ export const fileConfigSchema = z.object({
       enabled: z.boolean().default(true),
       text: z.string().default('+'),
       template: z.string().default('[user="{user_id}"]{username}[/user], {text}'),
+      /** Shown when the channel has paid reactions disabled. */
+      paidReactionsDisabledText: z
+        .string()
+        .default('у вас выключены платные реакции, включите их и приходите еще!'),
       ad: z
         .object({
           enabled: z.boolean().default(true),

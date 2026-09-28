@@ -54,6 +54,8 @@ comment:
   text: "+\n[IMG=width=100;align=left]https://nztcdn.com/files/90b5834c-80da-44f3-a28c-25a9f29638e3.webp[/IMG]"
   # Placeholders: {user_id} {username} {text} {stars} {link}
   template: '[user="{user_id}"]{username}[/user], {text}'
+  # Sent instead of the usual confirmation when the channel disabled paid reactions.
+  paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!'
   # Second comment under every post — an advertisement. Fully configurable.
   ad:
     enabled: true

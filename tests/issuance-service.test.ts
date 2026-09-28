@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { AppConfig } from '../src/config';
 import { DEFAULT_AD_TEMPLATE } from '../src/config/defaults';
+import { PaidReactionsDisabledError } from '../src/core/errors';
 import { Database } from '../src/db/Database';
 import { IssuanceRepository } from '../src/db/repositories/IssuanceRepository';
 import type { ForumClient } from '../src/forum/ForumClient';
@@ -25,6 +26,8 @@ interface SetupOptions {
   existingComments?: CommentRow[];
   adoptAfterFailure?: boolean;
   sendThrowsButApplied?: boolean;
+  paidReactionsDisabled?: boolean;
+  sendThrowsPaidDisabled?: boolean;
 }
 
 const isAd = (body: string): boolean => body.trimStart().startsWith('[ad=');
@@ -42,8 +45,12 @@ function setup(options: SetupOptions = {}) {
       return options.resolveNull ? null : { chatId: -100123, messageId: 25, message: {} as never };
     },
     getOwnPaidReactionCount: async () => telegram.ownedCount,
+    hasPaidReactions: async () => !options.paidReactionsDisabled,
     sendStarReaction: async () => {
       telegram.sendCalls += 1;
+      if (options.sendThrowsPaidDisabled) {
+        throw new PaidReactionsDisabledError('paid reactions disabled');
+      }
       telegram.ownedCount += 1;
       if (options.sendThrowsButApplied) {
         throw new Error(
@@ -345,5 +352,34 @@ describe('IssuanceService', () => {
     expect(telegram.sendCalls).toBe(1);
     expect(forum.createdBodies).toHaveLength(2);
     expect(repository.findByPostId(116)?.status).toBe('commented');
+  });
+
+  it('notifies the user and posts the ad when paid reactions are disabled', async () => {
+    const { service, repository, telegram, forum } = setup({ paidReactionsDisabled: true });
+
+    const outcome = await service.process(makePost({ post_id: 120 }));
+
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'paid_reactions_disabled' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(forum.createdBodies[0]).toBe(
+      '[user="4371739"]intimacy[/user], у вас выключены платные реакции, включите их и приходите еще!',
+    );
+    expect(forum.createdBodies[1]).toBe(DEFAULT_AD_TEMPLATE);
+    expect(repository.findByPostId(120)?.status).toBe('skipped');
+    expect(repository.findByPostId(120)?.skipReason).toBe('paid_reactions_disabled');
+    expect(repository.findByPostId(120)?.commentId).toBe(555);
+    expect(repository.findByPostId(120)?.adCommentId).toBe(556);
+  });
+
+  it('treats a paid-reaction send error as disabled and notifies', async () => {
+    const { service, repository, telegram, forum } = setup({ sendThrowsPaidDisabled: true });
+
+    const outcome = await service.process(makePost({ post_id: 121 }));
+
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'paid_reactions_disabled' });
+    expect(telegram.sendCalls).toBe(1);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(repository.findByPostId(121)?.skipReason).toBe('paid_reactions_disabled');
   });
 });

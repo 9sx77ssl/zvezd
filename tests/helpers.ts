@@ -29,6 +29,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       enabled: true,
       text: '+',
       template: '[user="{user_id}"]{username}[/user], {text}',
+      paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!',
       ad: { enabled: true, template: DEFAULT_AD_TEMPLATE },
     },
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },

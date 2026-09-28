@@ -1,6 +1,6 @@
 import type { AppConfig } from '../config';
 import { sleep } from '../core/async';
-import { ForumApiError, PermanentError } from '../core/errors';
+import { ForumApiError, PaidReactionsDisabledError, PermanentError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import type { IssuanceRecord } from '../db/types';
@@ -165,6 +165,10 @@ export class IssuanceService {
         balance,
       };
     } catch (err) {
+      if (err instanceof PaidReactionsDisabledError) {
+        return this.handlePaidReactionsDisabled(post, link.url, log);
+      }
+
       const permanent = this.isPermanent(err);
       const current = this.repository.findByPostId(postId);
       const message = err instanceof Error ? err.message : String(err);
@@ -224,6 +228,13 @@ export class IssuanceService {
       return balance;
     }
 
+    // The channel must accept paid reactions; otherwise we tell the user and
+    // still post the ad, instead of failing forever.
+    const paidEnabled = await this.telegram.hasPaidReactions(resolved.chatId);
+    if (!paidEnabled) {
+      throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link}`);
+    }
+
     log.info('Sending star reaction', {
       link,
       chatId: resolved.chatId,
@@ -271,8 +282,64 @@ export class IssuanceService {
         });
         return balance;
       }
+
+      if (err instanceof PaidReactionsDisabledError) throw err;
+
+      // The send failed and no reaction was applied. If the channel simply has
+      // paid reactions disabled, tell the user instead of retrying forever.
+      const stillEnabled = await this.telegram.hasPaidReactions(resolved.chatId);
+      if (!stillEnabled) {
+        throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link}`, {
+          cause: err,
+        });
+      }
+
       throw err;
     }
+  }
+
+  /**
+   * The channel has paid reactions disabled. Tell the user and still post the
+   * ad, respecting the same pacing, then mark the submission terminal so we
+   * never retry it.
+   */
+  private async handlePaidReactionsDisabled(
+    post: ForumPost,
+    link: string,
+    log: Logger,
+  ): Promise<IssuanceOutcome> {
+    const postId = post.post_id;
+    let commentId: number | null = null;
+
+    if (this.config.comment.enabled) {
+      const noticeBody = this.renderBody(
+        this.config.comment.template,
+        post,
+        link,
+        this.config.comment.paidReactionsDisabledText,
+      );
+      const existing = await this.findOwnCommentByBody(postId, noticeBody);
+      commentId = existing ?? (await this.postComment(post, noticeBody, log, 'notice'));
+      if (this.config.pacing.commentToAdMs > 0) {
+        await sleep(this.config.pacing.commentToAdMs);
+      }
+    }
+
+    let adCommentId: number | null = null;
+    if (this.config.comment.ad.enabled) {
+      const adBody = this.renderBody(this.config.comment.ad.template, post, link);
+      const existing = await this.findOwnCommentByBody(postId, adBody);
+      adCommentId = existing ?? (await this.postComment(post, adBody, log, 'ad'));
+    }
+
+    this.repository.markPaidReactionsDisabled(postId, commentId, adCommentId);
+    log.warn('Channel has paid reactions disabled, notified the user', {
+      link,
+      commentId,
+      adCommentId,
+    });
+
+    return { kind: 'skipped', postId, reason: 'paid_reactions_disabled' };
   }
 
   private async writeConfirmation(
@@ -319,11 +386,11 @@ export class IssuanceService {
     return adCommentId;
   }
 
-  private renderBody(template: string, post: ForumPost, link: string): string {
+  private renderBody(template: string, post: ForumPost, link: string, text?: string): string {
     return renderComment(template, {
       user_id: post.poster_user_id,
       username: post.poster_username,
-      text: this.config.comment.text,
+      text: text ?? this.config.comment.text,
       stars: this.config.star.count,
       link,
     });
@@ -338,7 +405,7 @@ export class IssuanceService {
     post: ForumPost,
     body: string,
     log: Logger,
-    kind: 'confirmation' | 'ad',
+    kind: 'confirmation' | 'ad' | 'notice',
   ): Promise<number> {
     try {
       const response = await this.forum.createComment(post.post_id, body);
