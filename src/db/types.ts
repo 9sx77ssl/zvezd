@@ -39,3 +39,20 @@ export interface ReserveIssuanceInput {
 }
 
 export type IssuanceStats = Record<IssuanceStatus | 'total', number>;
+
+/** Per-user aggregate for the forum stats page. */
+export interface UserStat {
+  userId: number;
+  username: string;
+  /** Stars issued to this user. */
+  stars: number;
+  /** Posts submitted by this user. */
+  posts: number;
+}
+
+/** Overall aggregate for the forum stats page. */
+export interface OverallStats {
+  users: number;
+  posts: number;
+  stars: number;
+}

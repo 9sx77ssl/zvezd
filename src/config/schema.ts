@@ -88,6 +88,13 @@ export const fileConfigSchema = z.object({
       path: z.string().default('./data/star.db'),
     })
     .prefault({}),
+  stats: z.object({
+    /** Live stats page shown as a forum thread. */
+    enabled: z.boolean().default(true),
+    threadId: z.number().int().positive(),
+    intervalMs: z.number().int().min(10_000).default(60_000),
+    titleTemplate: z.string().default('Razda4a zvezd stats - {date}'),
+  }),
   telegram: z
     .object({
       sessionPath: z.string().default('./data/tg.session'),

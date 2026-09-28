@@ -117,4 +117,23 @@ describe('IssuanceRepository', () => {
 
     expect(repo.listPending().map((record) => record.postId)).toEqual([1, 2, 4, 7]);
   });
+
+  it('aggregates per-user and overall stats', () => {
+    const base = { threadId: 1, tgLink: null };
+    repo.reserve({ ...base, postId: 1, posterUserId: 10, posterUsername: 'alice' });
+    repo.markStarSent(1, '-100', 1);
+    repo.reserve({ ...base, postId: 2, posterUserId: 10, posterUsername: 'alice' });
+    repo.markStarSent(2, '-100', 2);
+    repo.reserve({ ...base, postId: 3, posterUserId: 20, posterUsername: 'bob' });
+    repo.markStarSent(3, '-100', 3);
+    repo.reserve({ ...base, postId: 4, posterUserId: 20, posterUsername: 'bob' });
+
+    const byUser = repo.statsByUser();
+    expect(byUser).toEqual([
+      { userId: 10, username: 'alice', stars: 2, posts: 2 },
+      { userId: 20, username: 'bob', stars: 1, posts: 2 },
+    ]);
+
+    expect(repo.overallStats()).toEqual({ users: 2, posts: 4, stars: 3 });
+  });
 });

@@ -17,3 +17,6 @@ data/
 # reference dumps provided by the user
 forum.json
 resp.json
+
+# bbcode reference provided by the user
+bbcode.html

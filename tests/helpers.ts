@@ -35,6 +35,12 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     retry: { attempts: 3, delayMs: 1, maxDelayMs: 2 },
     database: { path: ':memory:' },
     telegram: { sessionPath: ':memory:', apiId: 1, apiHash: 'hash' },
+    stats: {
+      enabled: false,
+      threadId: 1,
+      intervalMs: 60_000,
+      titleTemplate: 'stats - {date}',
+    },
     logging: { level: 'fatal', pretty: false },
   };
 

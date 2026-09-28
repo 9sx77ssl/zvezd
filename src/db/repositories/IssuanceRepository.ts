@@ -1,5 +1,12 @@
 import type { Database } from '../Database';
-import type { IssuanceRecord, IssuanceStats, IssuanceStatus, ReserveIssuanceInput } from '../types';
+import type {
+  IssuanceRecord,
+  IssuanceStats,
+  IssuanceStatus,
+  OverallStats,
+  ReserveIssuanceInput,
+  UserStat,
+} from '../types';
 
 interface IssuanceRow {
   id: number;
@@ -175,6 +182,43 @@ export class IssuanceRepository {
       .query<{ count: number }, []>('SELECT COUNT(*) AS count FROM issuances')
       .get();
     return (row?.count ?? 0) === 0;
+  }
+
+  /** Aggregated per-user stats for the public stats page. */
+  statsByUser(): UserStat[] {
+    const rows = this.db
+      .query<{ user_id: number; username: string; stars: number; posts: number }, []>(`
+        SELECT
+          poster_user_id                        AS user_id,
+          MAX(poster_username)                  AS username,
+          SUM(CASE WHEN star_sent_at IS NOT NULL THEN 1 ELSE 0 END) AS stars,
+          COUNT(*)                              AS posts
+        FROM issuances
+        GROUP BY poster_user_id
+        ORDER BY stars DESC, posts DESC, username ASC
+      `)
+      .all();
+
+    return rows.map((row) => ({
+      userId: row.user_id,
+      username: row.username,
+      stars: row.stars,
+      posts: row.posts,
+    }));
+  }
+
+  overallStats(): OverallStats {
+    const row = this.db
+      .query<{ users: number; posts: number; stars: number }, []>(`
+        SELECT
+          COUNT(DISTINCT poster_user_id) AS users,
+          COUNT(*)                       AS posts,
+          SUM(CASE WHEN star_sent_at IS NOT NULL THEN 1 ELSE 0 END) AS stars
+        FROM issuances
+      `)
+      .get();
+
+    return { users: row?.users ?? 0, posts: row?.posts ?? 0, stars: row?.stars ?? 0 };
   }
 
   stats(): IssuanceStats {

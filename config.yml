@@ -51,7 +51,7 @@ star:
 comment:
   enabled: true
   # Substituted into `{text}` of the confirmation comment.
-  text: "+"
+  text: "+\n[IMG=width=100;align=left]https://nztcdn.com/files/90b5834c-80da-44f3-a28c-25a9f29638e3.webp[/IMG]"
   # Placeholders: {user_id} {username} {text} {stars} {link}
   template: '[user="{user_id}"]{username}[/user], {text}'
   # Second comment under every post — an advertisement. Fully configurable.
@@ -83,6 +83,16 @@ retry:
 database:
   # Env DB_PATH overrides this.
   path: ./data/star.db
+
+stats:
+  # Live stats thread on the forum (edited every minute).
+  enabled: true
+  # Thread whose title + first post are rewritten with live stats.
+  threadId: 10345229
+  # How often to refresh the stats page.
+  intervalMs: 60000
+  # `{date}` is replaced with e.g. "26.09.28 13:12 UTC".
+  titleTemplate: 'Razda4a zvezd stats - {date}'
 
 telegram:
   # Env TG_SESSION_PATH overrides this.

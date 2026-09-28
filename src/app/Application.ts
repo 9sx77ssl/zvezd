@@ -7,6 +7,7 @@ import { ForumClient } from '../forum/ForumClient';
 import { rateLimiterFromPerMinute } from '../forum/RateLimiter';
 import { IssuanceService } from '../services/IssuanceService';
 import { ScannerService } from '../services/ScannerService';
+import { StatsService } from '../services/StatsService';
 import { TelegramService } from '../telegram/TelegramService';
 
 interface ApplicationDeps {
@@ -29,6 +30,7 @@ export class Application {
   private readonly database: Database;
   private readonly telegram: TelegramService;
   private readonly scanner: ScannerService;
+  private readonly stats: StatsService;
   private stopped = false;
 
   private constructor(deps: ApplicationDeps) {
@@ -52,6 +54,13 @@ export class Application {
       repository: deps.repository,
       state: deps.state,
       telegram: deps.telegram,
+      logger: deps.logger,
+    });
+
+    this.stats = new StatsService({
+      config: deps.config,
+      forum: deps.forum,
+      repository: deps.repository,
       logger: deps.logger,
     });
   }
@@ -102,7 +111,7 @@ export class Application {
 
   async run(): Promise<void> {
     try {
-      await this.scanner.start();
+      await Promise.all([this.scanner.start(), this.stats.start()]);
     } finally {
       await this.shutdown();
     }
@@ -111,12 +120,14 @@ export class Application {
   /** Request a graceful stop; `run()` will then close all resources. */
   stop(): void {
     this.scanner.stop();
+    this.stats.stop();
   }
 
   async shutdown(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
     this.scanner.stop();
+    this.stats.stop();
     await this.telegram.close();
     this.database.close();
     this.logger.info('Shutdown complete');

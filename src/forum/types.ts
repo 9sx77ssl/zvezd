@@ -46,6 +46,13 @@ export const forumThreadSchema = z.looseObject({
   thread_post_count: z.number().optional(),
   thread_is_deleted: z.boolean().optional(),
   thread_is_closed: z.boolean().optional(),
+  links: z
+    .looseObject({
+      permalink: z.string().optional(),
+      first_post: z.string().optional(),
+      last_post: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ForumThread = z.infer<typeof forumThreadSchema>;
@@ -108,3 +115,17 @@ export const userMeResponseSchema = z.looseObject({
 });
 
 export type UserMeResponse = z.infer<typeof userMeResponseSchema>;
+
+export const threadResponseSchema = z.looseObject({
+  thread: forumThreadSchema,
+  system_info: systemInfoSchema.optional(),
+});
+
+export type ThreadResponse = z.infer<typeof threadResponseSchema>;
+
+export const postResponseSchema = z.looseObject({
+  post: forumPostSchema,
+  system_info: systemInfoSchema.optional(),
+});
+
+export type PostResponse = z.infer<typeof postResponseSchema>;

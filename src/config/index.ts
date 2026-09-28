@@ -20,6 +20,7 @@ export interface AppConfig {
   retry: FileConfig['retry'];
   database: { path: string };
   telegram: { sessionPath: string; apiId: number; apiHash: string };
+  stats: FileConfig['stats'];
   logging: FileConfig['logging'];
 }
 
@@ -96,6 +97,7 @@ export function loadConfig(configPath = 'config.yml'): AppConfig {
       apiId: envValues.TG_API_ID,
       apiHash: envValues.TG_API_HASH,
     },
+    stats: values.stats,
     logging: {
       level: envValues.LOG_LEVEL ?? values.logging.level,
       pretty: envValues.LOG_PRETTY ?? values.logging.pretty,

@@ -8,9 +8,13 @@ import {
   type CreateCommentResponse,
   commentsListResponseSchema,
   createCommentResponseSchema,
+  type PostResponse,
   type PostsResponse,
+  postResponseSchema,
   postsResponseSchema,
   systemInfoSchema,
+  type ThreadResponse,
+  threadResponseSchema,
   type UserMeResponse,
   userMeResponseSchema,
 } from './types';
@@ -113,8 +117,27 @@ export class ForumClient {
     return this.request('GET', '/users/me', {}, userMeResponseSchema);
   }
 
+  getThread(threadId: number): Promise<ThreadResponse> {
+    return this.request('GET', `/threads/${threadId}`, {}, threadResponseSchema);
+  }
+
+  /** Edit a thread's title. */
+  editThread(threadId: number, title: string): Promise<ThreadResponse> {
+    return this.request('PUT', `/threads/${threadId}`, { body: { title } }, threadResponseSchema);
+  }
+
+  /** Edit a post's body. */
+  editPost(postId: number, postBody: string): Promise<PostResponse> {
+    return this.request(
+      'PUT',
+      `/posts/${postId}`,
+      { body: { post_body: postBody } },
+      postResponseSchema,
+    );
+  }
+
   private async request<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     path: string,
     options: RequestOptions & { body?: unknown },
     schema: z.ZodType<T>,
@@ -149,7 +172,7 @@ export class ForumClient {
   private retryDecision(
     err: unknown,
     attempt: number,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
   ): { retry: boolean; delayMs: number } {
     if (attempt >= this.retry.attempts) return { retry: false, delayMs: 0 };
 
@@ -161,7 +184,7 @@ export class ForumClient {
     // Writes are not idempotent: an ambiguous failure (timeout, connection
     // reset, 5xx) may still have been applied server-side. Never auto-retry
     // them here; the caller verifies and the issuance state machine retries.
-    if (method === 'POST') return { retry: false, delayMs: 0 };
+    if (method !== 'GET') return { retry: false, delayMs: 0 };
 
     if (err instanceof ForumApiError) {
       // 5xx = server failure; 403/408/425 = the forum's anti-flood / transient
@@ -184,7 +207,7 @@ export class ForumClient {
   }
 
   private async execute<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     path: string,
     options: RequestOptions & { body?: unknown },
     schema: z.ZodType<T>,
