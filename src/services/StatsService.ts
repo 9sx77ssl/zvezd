@@ -9,6 +9,7 @@ export interface StatsServiceDeps {
   config: AppConfig;
   forum: ForumClient;
   repository: IssuanceRepository;
+  telegram: { getBalance(): Promise<number> };
   logger: Logger;
 }
 
@@ -23,17 +24,20 @@ export class StatsService {
   private readonly config: AppConfig;
   private readonly forum: ForumClient;
   private readonly repository: IssuanceRepository;
+  private readonly telegram: { getBalance(): Promise<number> };
   private readonly logger: Logger;
 
   private running = false;
   private readonly abort = new AbortController();
   private firstPostId: number | null = null;
   private lastBody: string | null = null;
+  private lastBalance = 0;
 
   constructor(deps: StatsServiceDeps) {
     this.config = deps.config;
     this.forum = deps.forum;
     this.repository = deps.repository;
+    this.telegram = deps.telegram;
     this.logger = deps.logger.child('Stats');
   }
 
@@ -90,16 +94,40 @@ export class StatsService {
   private async updateOnce(): Promise<void> {
     if (this.firstPostId === null) return;
 
-    const now = new Date();
+    const now = Date.now();
     const users = this.repository.statsByUser();
     const overall = this.repository.overallStats();
     const sourceThreadUrl = `https://lolz.team/threads/${this.config.forum.threadId}/`;
 
-    const title = buildStatsTitle(this.config.stats.titleTemplate, now);
+    const perStar = this.config.star.count;
+    const spent = overall.stars * perStar;
+    const firstStarAt = this.repository.firstStarAt();
+    const days = firstStarAt ? Math.max(1, Math.round((now - firstStarAt) / 86_400_000)) : 1;
+    const avgPerDay = Math.round(spent / days);
+    const todayStart = new Date(now);
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayStars = this.repository.starsSince(todayStart.getTime()) * perStar;
+    const lastIssuedAt = this.repository.lastStarAt();
+
+    try {
+      this.lastBalance = await this.telegram.getBalance();
+    } catch (err) {
+      this.logger.warn('Could not read Telegram balance for stats', errorToLog(err));
+    }
+
+    const title = buildStatsTitle(this.config.stats.titleTemplate, new Date(now));
     const body = buildStatsBody({
       sourceThreadUrl,
       users,
       overall,
+      metrics: {
+        balance: this.lastBalance,
+        spent,
+        avgPerDay,
+        todayStars,
+        lastIssuedAt,
+        now,
+      },
       maxChars: MAX_BODY_CHARS,
     });
 

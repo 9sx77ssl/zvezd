@@ -136,4 +136,18 @@ describe('IssuanceRepository', () => {
 
     expect(repo.overallStats()).toEqual({ users: 2, posts: 4, stars: 3 });
   });
+
+  it('exposes first/last star timestamps and recent counts', () => {
+    const base = { threadId: 1, tgLink: null };
+    repo.reserve({ ...base, postId: 1, posterUserId: 10, posterUsername: 'alice' });
+    repo.markStarSent(1, '-100', 1);
+    repo.reserve({ ...base, postId: 2, posterUserId: 20, posterUsername: 'bob' });
+    repo.markStarSent(2, '-100', 2);
+
+    expect(repo.firstStarAt()).not.toBeNull();
+    expect(repo.lastStarAt()).not.toBeNull();
+    expect(repo.lastStarAt()! >= repo.firstStarAt()!).toBe(true);
+    expect(repo.starsSince(0)).toBe(2);
+    expect(repo.starsSince(Date.now() + 60_000)).toBe(0);
+  });
 });

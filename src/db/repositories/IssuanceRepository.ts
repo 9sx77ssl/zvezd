@@ -222,6 +222,30 @@ export class IssuanceRepository {
     return { users: row?.users ?? 0, posts: row?.posts ?? 0, stars: row?.stars ?? 0 };
   }
 
+  /** Timestamp of the very first issued star, or `null`. */
+  firstStarAt(): number | null {
+    const row = this.db
+      .query<{ t: number | null }, []>('SELECT MIN(star_sent_at) AS t FROM issuances')
+      .get();
+    return row?.t ?? null;
+  }
+
+  /** Timestamp of the most recently issued star, or `null`. */
+  lastStarAt(): number | null {
+    const row = this.db
+      .query<{ t: number | null }, []>('SELECT MAX(star_sent_at) AS t FROM issuances')
+      .get();
+    return row?.t ?? null;
+  }
+
+  /** Number of posts that received a star since the given timestamp. */
+  starsSince(since: number): number {
+    const row = this.db
+      .query<{ c: number }, [number]>('SELECT COUNT(*) AS c FROM issuances WHERE star_sent_at >= ?')
+      .get(since);
+    return row?.c ?? 0;
+  }
+
   stats(): IssuanceStats {
     const rows = this.db
       .query<{ status: string; count: number }, []>(

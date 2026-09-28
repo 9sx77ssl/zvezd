@@ -61,6 +61,7 @@ export class Application {
       config: deps.config,
       forum: deps.forum,
       repository: deps.repository,
+      telegram: deps.telegram,
       logger: deps.logger,
     });
   }
