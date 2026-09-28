@@ -18,12 +18,12 @@ function plural(count: number, singular: string, pluralForm: string): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-const RANK_COLORS = ['rgb(200,170,110)', 'rgb(170,170,170)', 'rgb(175,140,100)'];
-const DEFAULT_RANK_COLOR = 'rgb(140,140,140)';
-const GOLD = 'rgb(200,170,110)';
+const YELLOW = 'rgb(213,219,78)';
 const GREEN = 'rgb(140,180,140)';
 const GRAY = 'rgb(150,150,150)';
 const DIM = 'rgb(140,140,140)';
+const POSTS_GRAY = 'rgb(180,180,180)';
+const RANK_COLORS = [YELLOW, 'rgb(170,170,170)', 'rgb(175,140,100)'];
 
 export interface StatsBodyParams {
   sourceThreadUrl: string;
@@ -34,37 +34,31 @@ export interface StatsBodyParams {
 }
 
 /**
- * Builds the BBCode body of the stats thread, using only tags documented at
- * /help/bb-codes: CENTER, LEFT, SIZE, B, COLOR, URL, USER.
+ * Builds the BBCode body of the stats thread. Only tags documented at
+ * /help/bb-codes are used: CENTER, LEFT, SIZE, COLOR, URL, UNFURL, USER.
  */
 export function buildStatsBody(params: StatsBodyParams): string {
   const { sourceThreadUrl, users, overall, maxChars } = params;
 
-  const header = [
-    '[CENTER][SIZE=6][B][COLOR=rgb(200,80,80)]ZVEZDA STATS[/COLOR][/B][/SIZE]',
-    `[URL=${sourceThreadUrl}][SIZE=2][COLOR=rgb(120,150,200)]перейти к раздаче[/COLOR][/SIZE][/URL]`,
-    '',
-    `[SIZE=3][COLOR=${GRAY}]STATS OF ALL TIME[/COLOR][/SIZE][/CENTER]`,
-    '',
-    `[LEFT][SIZE=2][COLOR=${GRAY}]total:[/COLOR] ` +
-      `[COLOR=${GOLD}]${plural(overall.stars, 'star', 'stars')}[/COLOR] · ` +
-      `[COLOR=${GREEN}]${plural(overall.users, 'user', 'users')}[/COLOR] · ` +
-      `[COLOR=rgb(180,180,180)]${plural(overall.posts, 'post', 'posts')}[/COLOR][/SIZE]`,
-    '',
-  ].join('\n');
+  const header =
+    `[CENTER][UNFURL='${sourceThreadUrl}'][SIZE=5]${sourceThreadUrl}[/SIZE][/UNFURL][SIZE=5] [/SIZE][/CENTER]\n\n` +
+    `[LEFT][SIZE=5][COLOR=${GRAY}]total:[/COLOR] ` +
+    `[COLOR=${YELLOW}]${plural(overall.stars, 'star', 'stars')}[/COLOR] · ` +
+    `[COLOR=${GREEN}]${plural(overall.users, 'user', 'users')}[/COLOR] · ` +
+    `[COLOR=${POSTS_GRAY}]${plural(overall.posts, 'post', 'posts')}[/COLOR]\n\n`;
 
-  const footer = '[/LEFT]';
+  const suffix = '\n[/SIZE][/LEFT]';
   const lines: string[] = [];
-  let length = header.length + footer.length;
+  let length = header.length + suffix.length;
 
   for (let index = 0; index < users.length; index += 1) {
     const user = users[index]!;
     const rank = index + 1;
-    const color = RANK_COLORS[index] ?? DEFAULT_RANK_COLOR;
+    const color = RANK_COLORS[index] ?? DIM;
     const line =
-      `[SIZE=3][COLOR=${color}]${rank}.[/COLOR][/SIZE] ` +
-      `[USER=${user.userId}]${user.username}[/USER] — ` +
-      `[COLOR=${GOLD}]${plural(user.stars, 'star', 'stars')}[/COLOR] ` +
+      `[COLOR=${color}]${rank}.[/COLOR] [/SIZE]` +
+      `[USER=${user.userId}]@${user.username}[/USER]` +
+      `[SIZE=5] — [COLOR=${YELLOW}]${plural(user.stars, 'star', 'stars')}[/COLOR] ` +
       `[COLOR=${DIM}]/ ${plural(user.posts, 'post', 'posts')}[/COLOR]`;
 
     if (length + line.length + 1 > maxChars - 40) {
@@ -77,5 +71,5 @@ export function buildStatsBody(params: StatsBodyParams): string {
     length += line.length + 1;
   }
 
-  return [header, ...lines, footer].join('\n');
+  return `${header}${lines.join('\n')}${suffix}`;
 }

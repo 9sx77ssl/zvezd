@@ -92,7 +92,7 @@ stats:
   # How often to refresh the stats page.
   intervalMs: 60000
   # `{date}` is replaced with e.g. "26.09.28 13:12 UTC".
-  titleTemplate: 'Razda4a zvezd stats - {date}'
+  titleTemplate: 'Razda4a zvezd stats / updated at {date}'
 
 telegram:
   # Env TG_SESSION_PATH overrides this.

@@ -16,8 +16,8 @@ describe('stats-builder', () => {
 
   it('renders the title template', () => {
     const date = new Date(Date.UTC(2026, 8, 26, 13, 12));
-    expect(buildStatsTitle('Razda4a zvezd stats - {date}', date)).toBe(
-      'Razda4a zvezd stats - 26.09.26 13:12 UTC',
+    expect(buildStatsTitle('Razda4a zvezd stats / updated at {date}', date)).toBe(
+      'Razda4a zvezd stats / updated at 26.09.26 13:12 UTC',
     );
   });
 
@@ -29,13 +29,13 @@ describe('stats-builder', () => {
       maxChars: 65_000,
     });
 
-    expect(body).toContain('[CENTER]');
-    expect(body).toContain('[URL=https://lolz.team/threads/10335815/]');
+    expect(body).toContain("[UNFURL='https://lolz.team/threads/10335815/']");
+    expect(body).toContain('total:');
     expect(body).toContain('4 stars');
     expect(body).toContain('2 users');
     expect(body).toContain('5 posts');
     expect(body).not.toContain('★');
-    expect(body).toContain('[/CENTER]');
+    expect(body).toContain('[LEFT]');
     expect(body).toContain('[/LEFT]');
   });
 
@@ -47,10 +47,10 @@ describe('stats-builder', () => {
       maxChars: 65_000,
     });
 
-    expect(body).toContain('[USER=10]alice[/USER]');
-    expect(body).toContain('[USER=20]bob[/USER]');
+    expect(body).toContain('[USER=10]@alice[/USER]');
+    expect(body).toContain('[USER=20]@bob[/USER]');
     expect(body.indexOf('alice')).toBeLessThan(body.indexOf('bob'));
-    expect(body).toContain('[COLOR=rgb(200,170,110)]1.[/COLOR]');
+    expect(body).toContain('[COLOR=rgb(213,219,78)]1.[/COLOR]');
     expect(body).toContain('[COLOR=rgb(170,170,170)]2.[/COLOR]');
   });
 
