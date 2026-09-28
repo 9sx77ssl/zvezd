@@ -13,14 +13,22 @@ export function buildStatsTitle(template: string, now: Date): string {
   return template.replaceAll('{date}', formatUtc(now));
 }
 
-const RANK_COLORS = ['rgb(255,215,0)', 'rgb(192,192,192)', 'rgb(205,127,50)'];
-const DEFAULT_RANK_COLOR = 'rgb(170,170,170)';
+/** `1 star` / `2 stars`. */
+function plural(count: number, singular: string, pluralForm: string): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+const RANK_COLORS = ['rgb(200,170,110)', 'rgb(170,170,170)', 'rgb(175,140,100)'];
+const DEFAULT_RANK_COLOR = 'rgb(140,140,140)';
+const GOLD = 'rgb(200,170,110)';
+const GREEN = 'rgb(140,180,140)';
+const GRAY = 'rgb(150,150,150)';
+const DIM = 'rgb(140,140,140)';
 
 export interface StatsBodyParams {
   sourceThreadUrl: string;
   users: UserStat[];
   overall: OverallStats;
-  now: Date;
   /** Hard cap so the post never exceeds the forum limit. */
   maxChars: number;
 }
@@ -30,19 +38,18 @@ export interface StatsBodyParams {
  * /help/bb-codes: CENTER, LEFT, SIZE, B, COLOR, URL, USER.
  */
 export function buildStatsBody(params: StatsBodyParams): string {
-  const { sourceThreadUrl, users, overall, now, maxChars } = params;
+  const { sourceThreadUrl, users, overall, maxChars } = params;
 
   const header = [
-    '[CENTER][SIZE=7][B][COLOR=rgb(226,66,66)]ZVEZDA STATS[/COLOR][/B][/SIZE]',
-    `[SIZE=2][COLOR=rgb(150,150,150)]updated ${formatUtc(now)}[/COLOR][/SIZE]`,
+    '[CENTER][SIZE=6][B][COLOR=rgb(200,80,80)]ZVEZDA STATS[/COLOR][/B][/SIZE]',
+    `[URL=${sourceThreadUrl}][SIZE=2][COLOR=rgb(120,150,200)]перейти к раздаче[/COLOR][/SIZE][/URL]`,
     '',
-    `[SIZE=5][B][URL=${sourceThreadUrl}]★ Razda4a zvezd ★[/URL][/B][/SIZE]`,
+    `[SIZE=3][COLOR=${GRAY}]STATS OF ALL TIME[/COLOR][/SIZE][/CENTER]`,
     '',
-    '[SIZE=5][B][COLOR=rgb(88,180,255)]STATS OF ALL TIME[/COLOR][/B][/SIZE][/CENTER]',
-    '',
-    `[LEFT][SIZE=3][B]total:[/B] [COLOR=rgb(255,215,0)]${overall.stars} ★[/COLOR]   ` +
-      `·   [COLOR=rgb(140,255,140)]${overall.users} users[/COLOR]   ` +
-      `·   [COLOR=rgb(200,200,200)]${overall.posts} posts[/COLOR][/SIZE]`,
+    `[LEFT][SIZE=2][COLOR=${GRAY}]total:[/COLOR] ` +
+      `[COLOR=${GOLD}]${plural(overall.stars, 'star', 'stars')}[/COLOR] · ` +
+      `[COLOR=${GREEN}]${plural(overall.users, 'user', 'users')}[/COLOR] · ` +
+      `[COLOR=rgb(180,180,180)]${plural(overall.posts, 'post', 'posts')}[/COLOR][/SIZE]`,
     '',
   ].join('\n');
 
@@ -55,14 +62,14 @@ export function buildStatsBody(params: StatsBodyParams): string {
     const rank = index + 1;
     const color = RANK_COLORS[index] ?? DEFAULT_RANK_COLOR;
     const line =
-      `[SIZE=4][B][COLOR=${color}]${rank}.[/COLOR][/B][/SIZE] ` +
+      `[SIZE=3][COLOR=${color}]${rank}.[/COLOR][/SIZE] ` +
       `[USER=${user.userId}]${user.username}[/USER] — ` +
-      `[B][COLOR=rgb(140,255,140)]${user.stars}[/COLOR][/B] ★ ` +
-      `[COLOR=rgb(140,140,140)]/ ${user.posts} posts[/COLOR]`;
+      `[COLOR=${GOLD}]${plural(user.stars, 'star', 'stars')}[/COLOR] ` +
+      `[COLOR=${DIM}]/ ${plural(user.posts, 'post', 'posts')}[/COLOR]`;
 
     if (length + line.length + 1 > maxChars - 40) {
       const remaining = users.length - index;
-      lines.push(`[COLOR=rgb(150,150,150)]... and ${remaining} more[/COLOR]`);
+      lines.push(`[COLOR=${GRAY}]... and ${remaining} more[/COLOR]`);
       break;
     }
 

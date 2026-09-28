@@ -100,7 +100,6 @@ export class StatsService {
       sourceThreadUrl,
       users,
       overall,
-      now,
       maxChars: MAX_BODY_CHARS,
     });
 

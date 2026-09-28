@@ -26,15 +26,15 @@ describe('stats-builder', () => {
       sourceThreadUrl: 'https://lolz.team/threads/10335815/',
       users,
       overall,
-      now: new Date(Date.UTC(2026, 8, 26, 13, 12)),
       maxChars: 65_000,
     });
 
     expect(body).toContain('[CENTER]');
-    expect(body).toContain('updated 26.09.26 13:12 UTC');
     expect(body).toContain('[URL=https://lolz.team/threads/10335815/]');
-    expect(body).toContain('4 ★');
+    expect(body).toContain('4 stars');
     expect(body).toContain('2 users');
+    expect(body).toContain('5 posts');
+    expect(body).not.toContain('★');
     expect(body).toContain('[/CENTER]');
     expect(body).toContain('[/LEFT]');
   });
@@ -44,15 +44,31 @@ describe('stats-builder', () => {
       sourceThreadUrl: 'https://lolz.team/threads/1/',
       users,
       overall,
-      now: new Date(),
       maxChars: 65_000,
     });
 
     expect(body).toContain('[USER=10]alice[/USER]');
     expect(body).toContain('[USER=20]bob[/USER]');
     expect(body.indexOf('alice')).toBeLessThan(body.indexOf('bob'));
-    expect(body).toContain('[COLOR=rgb(255,215,0)]1.[/COLOR]');
-    expect(body).toContain('[COLOR=rgb(192,192,192)]2.[/COLOR]');
+    expect(body).toContain('[COLOR=rgb(200,170,110)]1.[/COLOR]');
+    expect(body).toContain('[COLOR=rgb(170,170,170)]2.[/COLOR]');
+  });
+
+  it('pluralizes stars and posts', () => {
+    const body = buildStatsBody({
+      sourceThreadUrl: 'https://lolz.team/threads/1/',
+      users: [
+        { userId: 1, username: 'one', stars: 1, posts: 1 },
+        { userId: 2, username: 'two', stars: 2, posts: 2 },
+      ],
+      overall: { users: 2, posts: 3, stars: 3 },
+      maxChars: 65_000,
+    });
+
+    expect(body).toContain('1 star');
+    expect(body).toContain('/ 1 post');
+    expect(body).toContain('2 stars');
+    expect(body).toContain('/ 2 posts');
   });
 
   it('truncates the list to fit the character limit', () => {
@@ -67,7 +83,6 @@ describe('stats-builder', () => {
       sourceThreadUrl: 'https://lolz.team/threads/1/',
       users: many,
       overall: { users: 500, posts: 500, stars: 1000 },
-      now: new Date(),
       maxChars: 2_000,
     });
 
