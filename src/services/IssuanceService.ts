@@ -118,7 +118,15 @@ export class IssuanceService {
         return { kind: 'already', postId, status: 'failed_permanent' };
       }
       if (record.attempts >= this.config.retry.attempts) {
-        return { kind: 'already', postId, status: 'attempts_exhausted' };
+        const cooldownPassed = Date.now() - record.updatedAt >= this.config.retry.cooldownMs;
+        if (!cooldownPassed) {
+          return { kind: 'already', postId, status: 'attempts_exhausted' };
+        }
+        this.logger.info('Retry cooldown elapsed, resetting attempts', {
+          postId,
+          attempts: record.attempts,
+        });
+        this.repository.resetAttempts(postId);
       }
     }
 

@@ -117,6 +117,13 @@ export class IssuanceRepository {
       .run(Date.now(), postId);
   }
 
+  /** Reset the attempt counter so a post can be retried after a cooldown. */
+  resetAttempts(postId: number): void {
+    this.db
+      .query('UPDATE issuances SET attempts = 0, updated_at = ? WHERE post_id = ?')
+      .run(Date.now(), postId);
+  }
+
   /** Store the pre-send paid-reaction baseline for idempotent star issuance. */
   setStarBaseline(postId: number, baseline: number): void {
     this.db

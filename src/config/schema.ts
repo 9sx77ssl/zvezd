@@ -85,6 +85,8 @@ export const fileConfigSchema = z.object({
       delayMs: z.number().int().positive().default(1_000),
       /** Ceiling for retry delays. */
       maxDelayMs: z.number().int().positive().default(30_000),
+      /** How long to wait before retrying a post that exhausted its attempts. */
+      cooldownMs: z.number().int().min(0).default(3_600_000),
     })
     .prefault({}),
   database: z

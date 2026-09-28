@@ -81,6 +81,8 @@ retry:
   delayMs: 1000
   # Ceiling for retry delays (ms).
   maxDelayMs: 30000
+  # After a post exhausts its attempts, wait this long before trying again.
+  cooldownMs: 3600000
 
 database:
   # Env DB_PATH overrides this.

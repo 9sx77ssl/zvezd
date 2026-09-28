@@ -382,4 +382,48 @@ describe('IssuanceService', () => {
     expect(forum.createdBodies).toHaveLength(2);
     expect(repository.findByPostId(121)?.skipReason).toBe('paid_reactions_disabled');
   });
+
+  it('retries a post once its attempt cooldown elapsed', async () => {
+    const { service, repository, telegram } = setup();
+
+    repository.reserve({
+      threadId: 1,
+      postId: 130,
+      posterUserId: 42,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/flexinout/25',
+    });
+    repository.bumpAttempts(130);
+    repository.bumpAttempts(130);
+    repository.bumpAttempts(130);
+    repository.markFailed(130, 'boom', true);
+
+    const outcome = await service.process(makePost({ post_id: 130 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed' });
+    expect(telegram.sendCalls).toBe(1);
+    expect(repository.findByPostId(130)?.status).toBe('commented');
+  });
+
+  it('keeps waiting while the attempt cooldown has not elapsed', async () => {
+    const config = makeConfig();
+    config.retry = { ...config.retry, cooldownMs: 3_600_000 };
+    const { service, repository } = setup({ config });
+
+    repository.reserve({
+      threadId: 1,
+      postId: 131,
+      posterUserId: 42,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/flexinout/25',
+    });
+    repository.bumpAttempts(131);
+    repository.bumpAttempts(131);
+    repository.bumpAttempts(131);
+    repository.markFailed(131, 'boom', true);
+
+    const outcome = await service.process(makePost({ post_id: 131 }));
+
+    expect(outcome).toMatchObject({ kind: 'already', status: 'attempts_exhausted' });
+  });
 });

@@ -33,7 +33,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       ad: { enabled: true, template: DEFAULT_AD_TEMPLATE },
     },
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },
-    retry: { attempts: 3, delayMs: 1, maxDelayMs: 2 },
+    retry: { attempts: 3, delayMs: 1, maxDelayMs: 2, cooldownMs: 0 },
     database: { path: ':memory:' },
     telegram: { sessionPath: ':memory:', apiId: 1, apiHash: 'hash' },
     stats: {
