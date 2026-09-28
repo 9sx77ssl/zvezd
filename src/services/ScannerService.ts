@@ -46,6 +46,7 @@ export class ScannerService {
   private readonly abort = new AbortController();
   private pollCount = 0;
   private balance: number | null = null;
+  private lastBalanceCheckAt = 0;
 
   constructor(deps: ScannerServiceDeps) {
     this.config = deps.config;
@@ -253,7 +254,11 @@ export class ScannerService {
     if (this.config.star.dryRun) return;
 
     const required = this.config.star.count;
-    if (this.balance !== null && this.balance >= required) return;
+    const stale = Date.now() - this.lastBalanceCheckAt >= this.config.balance.refreshIntervalMs;
+
+    // Trust the cached balance only until it grows stale; otherwise re-read the
+    // real one so stars spent elsewhere are noticed.
+    if (!stale && this.balance !== null && this.balance >= required) return;
 
     await this.refreshBalance();
     if (this.balance === null || this.balance >= required) return;
@@ -278,6 +283,7 @@ export class ScannerService {
   private async refreshBalance(): Promise<void> {
     try {
       this.balance = await this.telegram.getBalance();
+      this.lastBalanceCheckAt = Date.now();
     } catch (err) {
       this.logger.warn('Could not read Telegram Stars balance', errorToLog(err));
     }
@@ -315,6 +321,7 @@ export class ScannerService {
       outcomes.push(outcome);
       if (outcome.kind === 'processed' && outcome.balance !== undefined) {
         this.balance = outcome.balance;
+        this.lastBalanceCheckAt = Date.now();
       }
 
       const actionable =

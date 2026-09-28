@@ -15,6 +15,7 @@ interface SetupOptions {
   outcomeFor?: (post: ForumPost, page: number) => OutcomeKind;
   stopOnEmptyPage?: boolean;
   pageOfPost?: Record<number, ForumPost[]>;
+  getBalance?: () => Promise<number>;
 }
 
 function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
@@ -71,7 +72,7 @@ function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
     issuance: issuance as unknown as IssuanceService,
     repository,
     state,
-    telegram: { getBalance: async () => 100 },
+    telegram: { getBalance: options.getBalance ?? (async () => 100) },
     logger: testLogger,
   });
 
@@ -179,5 +180,33 @@ describe('ScannerService page walking', () => {
 
     expect(requestedPageOfPost).toEqual([999]);
     expect(processed).toEqual([999]);
+  });
+
+  it('re-reads the real balance even when the cached value looks fine', async () => {
+    let calls = 0;
+    const { scanner } = setup(
+      { 1: [p(1)] },
+      {
+        getBalance: async () => {
+          calls += 1;
+          return 5;
+        },
+      },
+    );
+
+    const internals = scanner as unknown as {
+      balance: number | null;
+      lastBalanceCheckAt: number;
+      running: boolean;
+      ensureSufficientStars: () => Promise<void>;
+    };
+
+    internals.running = true;
+    internals.balance = 9999; // stale cache
+    internals.lastBalanceCheckAt = 0;
+    await internals.ensureSufficientStars();
+
+    expect(calls).toBe(1);
+    expect(internals.balance).toBe(5);
   });
 });

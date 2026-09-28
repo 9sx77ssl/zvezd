@@ -41,6 +41,8 @@ pacing:
 balance:
   # While out of stars, how often (ms) to re-check the Telegram balance.
   checkIntervalMs: 60000
+  # Periodic re-read of the real balance (catches stars spent elsewhere).
+  refreshIntervalMs: 60000
 
 star:
   # Stars per post.
