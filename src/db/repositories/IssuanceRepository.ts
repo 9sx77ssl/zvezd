@@ -195,6 +195,7 @@ export class IssuanceRepository {
           COUNT(*)                              AS posts
         FROM issuances
         GROUP BY poster_user_id
+        HAVING stars > 0
         ORDER BY stars DESC, posts DESC, username ASC
       `)
       .all();
