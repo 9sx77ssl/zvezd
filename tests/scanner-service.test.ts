@@ -182,7 +182,7 @@ describe('ScannerService page walking', () => {
     expect(processed).toEqual([999]);
   });
 
-  it('re-reads the real balance even when the cached value looks fine', async () => {
+  it('re-reads the real balance on every check', async () => {
     let calls = 0;
     const { scanner } = setup(
       { 1: [p(1)] },
@@ -196,14 +196,12 @@ describe('ScannerService page walking', () => {
 
     const internals = scanner as unknown as {
       balance: number | null;
-      lastBalanceCheckAt: number;
       running: boolean;
       ensureSufficientStars: () => Promise<void>;
     };
 
     internals.running = true;
-    internals.balance = 9999; // stale cache
-    internals.lastBalanceCheckAt = 0;
+    internals.balance = 9999; // even a fresh-looking cache is re-read
     await internals.ensureSufficientStars();
 
     expect(calls).toBe(1);

@@ -43,8 +43,6 @@ export const fileConfigSchema = z.object({
     .object({
       /** While out of stars, how often to re-check the Telegram balance. */
       checkIntervalMs: z.number().int().min(5_000).default(60_000),
-      /** Periodic re-read of the real balance, even when it looks fine. */
-      refreshIntervalMs: z.number().int().min(5_000).default(60_000),
     })
     .prefault({}),
   star: z

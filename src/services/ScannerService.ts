@@ -46,7 +46,6 @@ export class ScannerService {
   private readonly abort = new AbortController();
   private pollCount = 0;
   private balance: number | null = null;
-  private lastBalanceCheckAt = 0;
 
   constructor(deps: ScannerServiceDeps) {
     this.config = deps.config;
@@ -250,17 +249,16 @@ export class ScannerService {
    * Stops all forum traffic while the account has too few stars, and resumes
    * automatically once the balance is topped up.
    */
+  /**
+   * Reads the real balance before each check of new posts. If there are not
+   * enough stars it pauses and keeps re-checking until they appear.
+   */
   private async ensureSufficientStars(): Promise<void> {
     if (this.config.star.dryRun) return;
 
-    const required = this.config.star.count;
-    const stale = Date.now() - this.lastBalanceCheckAt >= this.config.balance.refreshIntervalMs;
-
-    // Trust the cached balance only until it grows stale; otherwise re-read the
-    // real one so stars spent elsewhere are noticed.
-    if (!stale && this.balance !== null && this.balance >= required) return;
-
     await this.refreshBalance();
+
+    const required = this.config.star.count;
     if (this.balance === null || this.balance >= required) return;
 
     this.logger.warn('Not enough Telegram Stars, pausing forum polling', {
@@ -283,12 +281,10 @@ export class ScannerService {
   private async refreshBalance(): Promise<void> {
     try {
       this.balance = await this.telegram.getBalance();
-      this.lastBalanceCheckAt = Date.now();
     } catch (err) {
       this.logger.warn('Could not read Telegram Stars balance', errorToLog(err));
     }
   }
-
   private logHeartbeat(message: string, issued = 0): void {
     this.logger.info(message, {
       issued,
@@ -321,7 +317,6 @@ export class ScannerService {
       outcomes.push(outcome);
       if (outcome.kind === 'processed' && outcome.balance !== undefined) {
         this.balance = outcome.balance;
-        this.lastBalanceCheckAt = Date.now();
       }
 
       const actionable =
