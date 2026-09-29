@@ -67,22 +67,23 @@ export interface UserLinkRow {
   count: number;
 }
 
-/** A channel a user submitted, with how many times. */
-export interface UserChannelRef {
-  channel: string;
-  count: number;
-}
-
 /** Another forum user that submitted one of the same channels. */
 export interface SharedUser {
   userId: number;
   username: string;
 }
 
-/** Per-user channel links plus cross-user overlap, for the stats page. */
+/** A channel a user submitted, with how many times and who else used it. */
+export interface UserChannelRef {
+  channel: string;
+  count: number;
+  /** Other users that submitted this same channel (empty when unique). */
+  sharedWith: SharedUser[];
+}
+
+/** Per-user channel links (with per-channel overlaps) for the stats page. */
 export interface UserChannelStats {
   userId: number;
   username: string;
   channels: UserChannelRef[];
-  sharedWith: SharedUser[];
 }

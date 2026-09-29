@@ -157,17 +157,17 @@ describe('stats-builder', () => {
 
       const alice = stats.find((entry) => entry.userId === 10)!;
       expect(alice.channels).toEqual([
-        { channel: 'beta_chan', count: 3 },
-        { channel: 'alpha_chan', count: 2 },
+        { channel: 'beta_chan', count: 3, sharedWith: [] },
+        { channel: 'alpha_chan', count: 2, sharedWith: [{ userId: 20, username: 'bob' }] },
       ]);
-      expect(alice.sharedWith).toEqual([{ userId: 20, username: 'bob' }]);
 
       const bob = stats.find((entry) => entry.userId === 20)!;
-      expect(bob.channels).toEqual([{ channel: 'alpha_chan', count: 1 }]);
-      expect(bob.sharedWith).toEqual([{ userId: 10, username: 'alice' }]);
+      expect(bob.channels).toEqual([
+        { channel: 'alpha_chan', count: 1, sharedWith: [{ userId: 10, username: 'alice' }] },
+      ]);
 
       const carol = stats.find((entry) => entry.userId === 30)!;
-      expect(carol.sharedWith).toEqual([]);
+      expect(carol.channels).toEqual([{ channel: 'solo_chan', count: 2, sharedWith: [] }]);
     });
 
     it('renders a link spoiler and an overlap note under each user', () => {
@@ -184,14 +184,17 @@ describe('stats-builder', () => {
         maxChars: 65_000,
       });
 
-      expect(body).toContain('[SPOILER=links][SIZE=3]');
+      expect(body).toContain('[SPOILER=links · 2 · has match][SIZE=3]');
       expect(body).toContain('[srci]t.me/beta_chan · 3[/srci]');
       expect(body).toContain('[srci]t.me/alpha_chan · 2[/srci]');
-      expect(body).toContain('[COLOR=rgb(150,150,150)]match: @bob[/COLOR]');
-      expect(body).toContain('[COLOR=rgb(150,150,150)]match: @alice[/COLOR]');
-      // The overlap note lives inside the spoiler, after the links.
-      expect(body.indexOf('match: @bob')).toBeLessThan(body.indexOf('[/SPOILER]'));
-      expect(body.indexOf('t.me/alpha_chan · 2')).toBeLessThan(body.indexOf('match: @bob'));
+      expect(body).toContain(
+        '[COLOR=rgb(150,150,150)]/ match: bob (https://lolz.team/members/20/)[/COLOR]',
+      );
+      expect(body).toContain('[SPOILER=links · 1 · has match]');
+      expect(body).toContain('[SPOILER=links · 1]');
+      // Each overlap note sits on the matching link's line, inside the spoiler.
+      expect(body.indexOf('t.me/alpha_chan · 2')).toBeLessThan(body.indexOf('/ match: bob'));
+      expect(body.indexOf('/ match: bob')).toBeLessThan(body.indexOf('[/SPOILER]'));
     });
 
     it('omits the spoiler when there are no links', () => {

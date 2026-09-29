@@ -64,13 +64,13 @@ export function buildUserChannelStats(rows: UserLinkRow[]): UserChannelStats[] {
 
     let user = byUser.get(row.userId);
     if (!user) {
-      user = { userId: row.userId, username: row.username, channels: [], sharedWith: [] };
+      user = { userId: row.userId, username: row.username, channels: [] };
       byUser.set(row.userId, user);
     }
 
     const existing = user.channels.find((entry) => entry.channel.toLowerCase() === key);
     if (existing) existing.count += row.count;
-    else user.channels.push({ channel, count: row.count });
+    else user.channels.push({ channel, count: row.count, sharedWith: [] });
 
     let holders = channelHolders.get(key);
     if (!holders) {
@@ -83,17 +83,14 @@ export function buildUserChannelStats(rows: UserLinkRow[]): UserChannelStats[] {
   for (const user of byUser.values()) {
     user.channels.sort((a, b) => b.count - a.count || a.channel.localeCompare(b.channel));
 
-    const shared = new Map<number, string>();
     for (const channel of user.channels) {
       const holders = channelHolders.get(channel.channel.toLowerCase());
       if (!holders) continue;
-      for (const [userId, username] of holders) {
-        if (userId !== user.userId) shared.set(userId, username);
-      }
+      channel.sharedWith = [...holders.entries()]
+        .filter(([userId]) => userId !== user.userId)
+        .map(([userId, username]) => ({ userId, username }))
+        .sort((a, b) => a.username.localeCompare(b.username));
     }
-    user.sharedWith = [...shared.entries()]
-      .map(([userId, username]) => ({ userId, username }))
-      .sort((a, b) => a.username.localeCompare(b.username));
   }
 
   return [...byUser.values()].sort((a, b) => a.userId - b.userId);
@@ -127,24 +124,34 @@ export interface StatsBodyParams {
 /**
  * The "hide" block appended under a user's ranking row. Inside a spoiler, at a
  * smaller size, each channel is shown as an inline-code chip `t.me/<channel> ·
- * <count>` on its own line, followed by a minimal gray overlap note when
- * another forum user submitted one of the same channels.
+ * <count>` on its own line. When other users submitted the same channel, a
+ * minimal gray `/ match: name (profile)` note follows that exact link, and the
+ * spoiler title carries `has match`.
  */
 function renderUserLinks(stats: UserChannelStats | undefined): string {
   if (!stats || stats.channels.length === 0) return '';
 
   const shown = stats.channels.slice(0, MAX_CHANNELS_PER_USER);
-  const lines = shown.map((entry) => `[srci]t.me/${entry.channel} · ${entry.count}[/srci]`);
+  const lines = shown.map((entry) => {
+    const chip = `[srci]t.me/${entry.channel} · ${entry.count}[/srci]`;
+    if (entry.sharedWith.length === 0) return chip;
+
+    const matches = entry.sharedWith
+      .map((other) => `${other.username} (https://lolz.team/members/${other.userId}/)`)
+      .join(', ');
+    return `${chip} [COLOR=${GRAY}]/ match: ${matches}[/COLOR]`;
+  });
+
   if (stats.channels.length > shown.length) {
     lines.push(`[COLOR=${DIM}]+${stats.channels.length - shown.length} more[/COLOR]`);
   }
 
-  if (stats.sharedWith.length > 0) {
-    const names = stats.sharedWith.map((other) => `@${other.username}`).join(', ');
-    lines.push(`[COLOR=${GRAY}]match: ${names}[/COLOR]`);
-  }
+  const hasMatch = stats.channels.some((entry) => entry.sharedWith.length > 0);
+  const title = hasMatch
+    ? `links · ${stats.channels.length} · has match`
+    : `links · ${stats.channels.length}`;
 
-  return `\n[SPOILER=links][SIZE=3]${lines.join('\n')}[/SIZE][/SPOILER]`;
+  return `\n[SPOILER=${title}][SIZE=3]${lines.join('\n')}[/SIZE][/SPOILER]`;
 }
 
 /**
