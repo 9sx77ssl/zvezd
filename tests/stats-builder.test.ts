@@ -184,12 +184,14 @@ describe('stats-builder', () => {
         maxChars: 65_000,
       });
 
-      expect(body).toContain('[SPOILER=links: 2]');
-      expect(body).toContain("[URL='https://t.me/beta_chan']t.me/beta_chan[/URL] 3");
-      expect(body).toContain("[URL='https://t.me/alpha_chan']t.me/alpha_chan[/URL] 2");
-      expect(body).toContain('  match: [USER=20]@bob[/USER]');
-      expect(body).toContain('[SPOILER=links: 1]');
-      expect(body).toContain('match: [USER=10]@alice[/USER]');
+      expect(body).toContain('[SPOILER=links][SIZE=3]');
+      expect(body).toContain('[srci]t.me/beta_chan · 3[/srci]');
+      expect(body).toContain('[srci]t.me/alpha_chan · 2[/srci]');
+      expect(body).toContain('[COLOR=rgb(150,150,150)]match: @bob[/COLOR]');
+      expect(body).toContain('[COLOR=rgb(150,150,150)]match: @alice[/COLOR]');
+      // The overlap note lives inside the spoiler, after the links.
+      expect(body.indexOf('match: @bob')).toBeLessThan(body.indexOf('[/SPOILER]'));
+      expect(body.indexOf('t.me/alpha_chan · 2')).toBeLessThan(body.indexOf('match: @bob'));
     });
 
     it('omits the spoiler when there are no links', () => {

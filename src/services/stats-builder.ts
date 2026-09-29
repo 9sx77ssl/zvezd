@@ -124,40 +124,32 @@ export interface StatsBodyParams {
   maxChars: number;
 }
 
-/** One line inside a user's link spoiler: `t.me/<channel> <count>`. */
-function renderChannel(channel: string, count: number): string {
-  return `[URL='https://t.me/${channel}']t.me/${channel}[/URL] ${count}`;
-}
-
 /**
- * The "hide" block appended under a user's ranking row: a spoiler with their
- * channels (most submitted first), plus a visible overlap note when another
- * forum user submitted one of the same channels.
+ * The "hide" block appended under a user's ranking row. Inside a spoiler, at a
+ * smaller size, each channel is shown as an inline-code chip `t.me/<channel> ·
+ * <count>` on its own line, followed by a minimal gray overlap note when
+ * another forum user submitted one of the same channels.
  */
 function renderUserLinks(stats: UserChannelStats | undefined): string {
   if (!stats || stats.channels.length === 0) return '';
 
   const shown = stats.channels.slice(0, MAX_CHANNELS_PER_USER);
-  const parts = shown.map((entry) => renderChannel(entry.channel, entry.count));
+  const lines = shown.map((entry) => `[srci]t.me/${entry.channel} · ${entry.count}[/srci]`);
   if (stats.channels.length > shown.length) {
-    parts.push(`+${stats.channels.length - shown.length} more`);
+    lines.push(`[COLOR=${DIM}]+${stats.channels.length - shown.length} more[/COLOR]`);
   }
-
-  let block = `\n[SPOILER=links: ${stats.channels.length}]${parts.join(' · ')}[/SPOILER]`;
 
   if (stats.sharedWith.length > 0) {
-    const names = stats.sharedWith
-      .map((other) => `[USER=${other.userId}]@${other.username}[/USER]`)
-      .join(', ');
-    block += `\n[COLOR=${YELLOW}]  match: ${names}[/COLOR]`;
+    const names = stats.sharedWith.map((other) => `@${other.username}`).join(', ');
+    lines.push(`[COLOR=${GRAY}]match: ${names}[/COLOR]`);
   }
 
-  return block;
+  return `\n[SPOILER=links][SIZE=3]${lines.join('\n')}[/SIZE][/SPOILER]`;
 }
 
 /**
  * Builds the BBCode body of the stats thread. Only tags documented at
- * /help/bb-codes are used: CENTER, LEFT, SIZE, COLOR, URL, UNFURL, USER.
+ * /help/bb-codes are used: CENTER, LEFT, SIZE, COLOR, USER, SPOILER, SRCI.
  */
 export function buildStatsBody(params: StatsBodyParams): string {
   const { sourceThreadUrl, users, overall, metrics, links, maxChars } = params;
