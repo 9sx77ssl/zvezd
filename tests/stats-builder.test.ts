@@ -187,14 +187,13 @@ describe('stats-builder', () => {
       expect(body).toContain('[SPOILER=links · 2 · has match][SIZE=3]');
       expect(body).toContain('[srci]t.me/beta_chan · 3[/srci]');
       expect(body).toContain('[srci]t.me/alpha_chan · 2[/srci]');
-      expect(body).toContain(
-        '[COLOR=rgb(150,150,150)]/ match: bob (https://lolz.team/members/20/)[/COLOR]',
-      );
+      expect(body).toContain('[COLOR=rgb(150,150,150)]/ match: [USER=20]@bob[/USER][/COLOR]');
       expect(body).toContain('[SPOILER=links · 1 · has match]');
       expect(body).toContain('[SPOILER=links · 1]');
       // Each overlap note sits on the matching link's line, inside the spoiler.
-      expect(body.indexOf('t.me/alpha_chan · 2')).toBeLessThan(body.indexOf('/ match: bob'));
-      expect(body.indexOf('/ match: bob')).toBeLessThan(body.indexOf('[/SPOILER]'));
+      const matchNote = body.indexOf('/ match: [USER=20]@bob[/USER]');
+      expect(body.indexOf('t.me/alpha_chan · 2')).toBeLessThan(matchNote);
+      expect(matchNote).toBeLessThan(body.indexOf('[/SPOILER]'));
     });
 
     it('omits the spoiler when there are no links', () => {

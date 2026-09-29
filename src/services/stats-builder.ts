@@ -137,7 +137,7 @@ function renderUserLinks(stats: UserChannelStats | undefined): string {
     if (entry.sharedWith.length === 0) return chip;
 
     const matches = entry.sharedWith
-      .map((other) => `${other.username} (https://lolz.team/members/${other.userId}/)`)
+      .map((other) => `[USER=${other.userId}]@${other.username}[/USER]`)
       .join(', ');
     return `${chip} [COLOR=${GRAY}]/ match: ${matches}[/COLOR]`;
   });
