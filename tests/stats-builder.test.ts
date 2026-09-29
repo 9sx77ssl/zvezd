@@ -204,15 +204,12 @@ describe('stats-builder', () => {
     });
 
     it('caps the number of channels listed per user', () => {
-      const many: UserLinkRow[] = Array.from(
-        { length: MAX_CHANNELS_PER_USER + 5 },
-        (_, index) => ({
-          userId: 10,
-          username: 'alice',
-          link: `https://t.me/chan${String(index).padStart(2, '0')}/1`,
-          count: 1,
-        }),
-      );
+      const many: UserLinkRow[] = Array.from({ length: MAX_CHANNELS_PER_USER + 5 }, (_, index) => ({
+        userId: 10,
+        username: 'alice',
+        link: `https://t.me/chan${String(index).padStart(2, '0')}/1`,
+        count: 1,
+      }));
 
       const body = buildStatsBody({
         sourceThreadUrl: 'https://lolz.team/threads/1/',

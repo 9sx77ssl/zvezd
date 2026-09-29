@@ -1,9 +1,4 @@
-import type {
-  OverallStats,
-  UserChannelStats,
-  UserLinkRow,
-  UserStat,
-} from '../db/types';
+import type { OverallStats, UserChannelStats, UserLinkRow, UserStat } from '../db/types';
 import { channelOfLink } from '../telegram/link-parser';
 
 /** Formats a date as `DD.MM.YY HH:MM UTC`. */

@@ -139,11 +139,41 @@ describe('IssuanceRepository', () => {
 
   it('groups stored links per user with submission counts', () => {
     const base = { threadId: 1 };
-    repo.reserve({ ...base, postId: 1, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/1' });
-    repo.reserve({ ...base, postId: 2, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/2' });
-    repo.reserve({ ...base, postId: 3, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/bar' });
-    repo.reserve({ ...base, postId: 4, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/1' });
-    repo.reserve({ ...base, postId: 5, posterUserId: 20, posterUsername: 'bob', tgLink: 'https://t.me/foo/9' });
+    repo.reserve({
+      ...base,
+      postId: 1,
+      posterUserId: 10,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/foo/1',
+    });
+    repo.reserve({
+      ...base,
+      postId: 2,
+      posterUserId: 10,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/foo/2',
+    });
+    repo.reserve({
+      ...base,
+      postId: 3,
+      posterUserId: 10,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/bar',
+    });
+    repo.reserve({
+      ...base,
+      postId: 4,
+      posterUserId: 10,
+      posterUsername: 'alice',
+      tgLink: 'https://t.me/foo/1',
+    });
+    repo.reserve({
+      ...base,
+      postId: 5,
+      posterUserId: 20,
+      posterUsername: 'bob',
+      tgLink: 'https://t.me/foo/9',
+    });
     repo.reserve({ ...base, postId: 6, posterUserId: 20, posterUsername: 'bob', tgLink: null });
 
     expect(repo.linkRowsByUser()).toEqual([
