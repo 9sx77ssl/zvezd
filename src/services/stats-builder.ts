@@ -1,4 +1,10 @@
-import type { OverallStats, UserStat } from '../db/types';
+import type {
+  OverallStats,
+  UserChannelStats,
+  UserLinkRow,
+  UserStat,
+} from '../db/types';
+import { channelOfLink } from '../telegram/link-parser';
 
 /** Formats a date as `DD.MM.YY HH:MM UTC`. */
 export function formatUtc(date: Date): string {
@@ -42,6 +48,62 @@ const LIGHT = 'rgb(180,180,180)';
 const DIM = 'rgb(140,140,140)';
 const RANK_COLORS = [YELLOW, 'rgb(170,170,170)', 'rgb(175,140,100)'];
 
+/** Hard cap on how many channels are listed per user inside the spoiler. */
+export const MAX_CHANNELS_PER_USER = 40;
+
+/**
+ * Turns raw `(user, link, count)` rows into per-user channel aggregates and
+ * flags which other forum users submitted one of the same channels. Matching
+ * happens on the channel username (case-insensitive), so two different posts in
+ * the same channel still count as an overlap.
+ */
+export function buildUserChannelStats(rows: UserLinkRow[]): UserChannelStats[] {
+  const byUser = new Map<number, UserChannelStats>();
+  const channelHolders = new Map<string, Map<number, string>>();
+
+  for (const row of rows) {
+    const channel = channelOfLink(row.link);
+    if (!channel) continue;
+
+    const key = channel.toLowerCase();
+
+    let user = byUser.get(row.userId);
+    if (!user) {
+      user = { userId: row.userId, username: row.username, channels: [], sharedWith: [] };
+      byUser.set(row.userId, user);
+    }
+
+    const existing = user.channels.find((entry) => entry.channel.toLowerCase() === key);
+    if (existing) existing.count += row.count;
+    else user.channels.push({ channel, count: row.count });
+
+    let holders = channelHolders.get(key);
+    if (!holders) {
+      holders = new Map();
+      channelHolders.set(key, holders);
+    }
+    holders.set(row.userId, row.username);
+  }
+
+  for (const user of byUser.values()) {
+    user.channels.sort((a, b) => b.count - a.count || a.channel.localeCompare(b.channel));
+
+    const shared = new Map<number, string>();
+    for (const channel of user.channels) {
+      const holders = channelHolders.get(channel.channel.toLowerCase());
+      if (!holders) continue;
+      for (const [userId, username] of holders) {
+        if (userId !== user.userId) shared.set(userId, username);
+      }
+    }
+    user.sharedWith = [...shared.entries()]
+      .map(([userId, username]) => ({ userId, username }))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  return [...byUser.values()].sort((a, b) => a.userId - b.userId);
+}
+
 export interface StatsMetrics {
   /** Telegram Stars left on the account. */
   balance: number;
@@ -61,8 +123,41 @@ export interface StatsBodyParams {
   users: UserStat[];
   overall: OverallStats;
   metrics: StatsMetrics;
+  /** Per-user channel links shown in a spoiler under each ranking row. */
+  links?: UserChannelStats[];
   /** Hard cap so the post never exceeds the forum limit. */
   maxChars: number;
+}
+
+/** One line inside a user's link spoiler: `t.me/<channel> <count>`. */
+function renderChannel(channel: string, count: number): string {
+  return `[URL='https://t.me/${channel}']t.me/${channel}[/URL] ${count}`;
+}
+
+/**
+ * The "hide" block appended under a user's ranking row: a spoiler with their
+ * channels (most submitted first), plus a visible overlap note when another
+ * forum user submitted one of the same channels.
+ */
+function renderUserLinks(stats: UserChannelStats | undefined): string {
+  if (!stats || stats.channels.length === 0) return '';
+
+  const shown = stats.channels.slice(0, MAX_CHANNELS_PER_USER);
+  const parts = shown.map((entry) => renderChannel(entry.channel, entry.count));
+  if (stats.channels.length > shown.length) {
+    parts.push(`+${stats.channels.length - shown.length} more`);
+  }
+
+  let block = `\n[SPOILER=links: ${stats.channels.length}]${parts.join(' · ')}[/SPOILER]`;
+
+  if (stats.sharedWith.length > 0) {
+    const names = stats.sharedWith
+      .map((other) => `[USER=${other.userId}]@${other.username}[/USER]`)
+      .join(', ');
+    block += `\n[COLOR=${YELLOW}]  match: ${names}[/COLOR]`;
+  }
+
+  return block;
 }
 
 /**
@@ -70,7 +165,8 @@ export interface StatsBodyParams {
  * /help/bb-codes are used: CENTER, LEFT, SIZE, COLOR, URL, UNFURL, USER.
  */
 export function buildStatsBody(params: StatsBodyParams): string {
-  const { sourceThreadUrl, users, overall, metrics, maxChars } = params;
+  const { sourceThreadUrl, users, overall, metrics, links, maxChars } = params;
+  const linksByUser = new Map((links ?? []).map((entry) => [entry.userId, entry]));
 
   const header =
     `[CENTER][UNFURL='${sourceThreadUrl}'][SIZE=5]${sourceThreadUrl}[/SIZE][/UNFURL][SIZE=5] [/SIZE][/CENTER]\n\n` +
@@ -99,7 +195,8 @@ export function buildStatsBody(params: StatsBodyParams): string {
       `[COLOR=${color}]${rank}.[/COLOR] [/SIZE]` +
       `[USER=${user.userId}]@${user.username}[/USER]` +
       `[SIZE=5] — [COLOR=${YELLOW}]${plural(user.stars, 'star', 'stars')}[/COLOR] ` +
-      `[COLOR=${DIM}]/ ${plural(user.posts, 'post', 'posts')}[/COLOR]`;
+      `[COLOR=${DIM}]/ ${plural(user.posts, 'post', 'posts')}[/COLOR]` +
+      renderUserLinks(linksByUser.get(user.userId));
 
     if (length + line.length + 1 > maxChars - 40) {
       const remaining = users.length - index;

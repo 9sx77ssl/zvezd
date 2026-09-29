@@ -55,6 +55,28 @@ export function parseTgPostLink(input: string): TgPostLink | null {
   return { kind: 'post', url: `https://t.me/${username}/${messageId}`, username, messageId };
 }
 
+/** Parse a single bare channel string into a link, or `null` when invalid. */
+export function parseTgChannelLink(input: string): TgChannelLink | null {
+  const match = new RegExp(
+    String.raw`^(?:https?:\/\/)?(?:www\.)?(?:${HOST_PATTERN})\/(${USERNAME})\/?$`,
+    'i',
+  ).exec(input.trim());
+  if (!match) return null;
+
+  const username = match[1];
+  if (!username) return null;
+
+  return { kind: 'channel', url: `https://t.me/${username}`, username };
+}
+
+/**
+ * Channel username behind a normalized stored link (a specific post or a bare
+ * channel), or `null` when the string is not a valid public Telegram link.
+ */
+export function channelOfLink(input: string): string | null {
+  return parseTgPostLink(input)?.username ?? parseTgChannelLink(input)?.username ?? null;
+}
+
 /**
  * Extract every distinct valid link from an HTML string, preserving order of
  * appearance. Duplicates (same channel + message, or same channel) collapse.

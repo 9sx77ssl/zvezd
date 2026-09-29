@@ -104,6 +104,12 @@ export const fileConfigSchema = z.object({
     threadId: z.number().int().positive(),
     intervalMs: z.number().int().min(10_000).default(60_000),
     titleTemplate: z.string().default('Razda4a zvezd stats / updated at {date}'),
+    links: z
+      .object({
+        /** Show a per-user channel-links spoiler under each ranking row. */
+        enabled: z.boolean().default(true),
+      })
+      .prefault({}),
   }),
   telegram: z
     .object({

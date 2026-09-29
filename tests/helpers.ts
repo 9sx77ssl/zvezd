@@ -42,6 +42,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       threadId: 1,
       intervalMs: 60_000,
       titleTemplate: 'stats - {date}',
+      links: { enabled: true },
     },
     logging: { level: 'fatal', pretty: false },
   };

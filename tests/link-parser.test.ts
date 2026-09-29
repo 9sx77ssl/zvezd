@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  channelOfLink,
   extractTgPostLinks,
+  parseTgChannelLink,
   parseTgPostLink,
   selectFirstTgLink,
   selectFirstTgPostLink,
@@ -70,6 +72,24 @@ describe('link-parser', () => {
     const html =
       '<a href="https://t.me/somechannel">c</a> <a href="https://t.me/somechannel/5">p</a>';
     expect(selectFirstTgLink(html)).toMatchObject({ kind: 'post', messageId: 5 });
+  });
+
+  it('parses a single bare channel link', () => {
+    expect(parseTgChannelLink('https://t.me/flexinout')).toEqual({
+      kind: 'channel',
+      url: 'https://t.me/flexinout',
+      username: 'flexinout',
+    });
+    expect(parseTgChannelLink('telegram.dog/flexinout/')?.username).toBe('flexinout');
+    expect(parseTgChannelLink('https://t.me/flexinout/25')).toBeNull();
+    expect(parseTgChannelLink('https://t.me/+AbCdEf')).toBeNull();
+  });
+
+  it('derives the channel username from any stored link', () => {
+    expect(channelOfLink('https://t.me/flexinout/25')).toBe('flexinout');
+    expect(channelOfLink('https://t.me/flexinout')).toBe('flexinout');
+    expect(channelOfLink('https://t.me/+AbCdEf')).toBeNull();
+    expect(channelOfLink('not a link')).toBeNull();
   });
 
   it('rejects invite/private/web-preview links in channel mode', () => {

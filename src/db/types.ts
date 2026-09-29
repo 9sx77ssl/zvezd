@@ -56,3 +56,33 @@ export interface OverallStats {
   posts: number;
   stars: number;
 }
+
+/** A single `(user, link)` group as read from the database. */
+export interface UserLinkRow {
+  userId: number;
+  username: string;
+  /** Normalized link exactly as stored (`https://t.me/<channel>[/<id>]`). */
+  link: string;
+  /** How many times this user submitted this exact link. */
+  count: number;
+}
+
+/** A channel a user submitted, with how many times. */
+export interface UserChannelRef {
+  channel: string;
+  count: number;
+}
+
+/** Another forum user that submitted one of the same channels. */
+export interface SharedUser {
+  userId: number;
+  username: string;
+}
+
+/** Per-user channel links plus cross-user overlap, for the stats page. */
+export interface UserChannelStats {
+  userId: number;
+  username: string;
+  channels: UserChannelRef[];
+  sharedWith: SharedUser[];
+}

@@ -3,7 +3,7 @@ import { sleep } from '../core/async';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import type { ForumClient } from '../forum/ForumClient';
-import { buildStatsBody, buildStatsTitle } from './stats-builder';
+import { buildStatsBody, buildStatsTitle, buildUserChannelStats } from './stats-builder';
 
 export interface StatsServiceDeps {
   config: AppConfig;
@@ -116,10 +116,15 @@ export class StatsService {
     }
 
     const title = buildStatsTitle(this.config.stats.titleTemplate, new Date(now));
+    const links = this.config.stats.links.enabled
+      ? buildUserChannelStats(this.repository.linkRowsByUser())
+      : undefined;
+
     const body = buildStatsBody({
       sourceThreadUrl,
       users,
       overall,
+      links,
       metrics: {
         balance: this.lastBalance,
         spent,

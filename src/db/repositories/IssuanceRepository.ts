@@ -5,6 +5,7 @@ import type {
   IssuanceStatus,
   OverallStats,
   ReserveIssuanceInput,
+  UserLinkRow,
   UserStat,
 } from '../types';
 
@@ -245,6 +246,34 @@ export class IssuanceRepository {
       username: row.username,
       stars: row.stars,
       posts: row.posts,
+    }));
+  }
+
+  /**
+   * Every `(user, link)` pair with how many times the user submitted that exact
+   * link. Channel-level aggregation and cross-user matching happen in the
+   * stats builder; the stored link is normalized, so the raw rows are enough.
+   */
+  linkRowsByUser(): UserLinkRow[] {
+    const rows = this.db
+      .query<{ user_id: number; username: string; link: string; c: number }, []>(`
+        SELECT
+          poster_user_id  AS user_id,
+          MAX(poster_username) AS username,
+          tg_link         AS link,
+          COUNT(*)        AS c
+        FROM issuances
+        WHERE tg_link IS NOT NULL AND tg_link <> ''
+        GROUP BY poster_user_id, tg_link
+        ORDER BY user_id ASC, c DESC, tg_link ASC
+      `)
+      .all();
+
+    return rows.map((row) => ({
+      userId: row.user_id,
+      username: row.username,
+      link: row.link,
+      count: row.c,
     }));
   }
 

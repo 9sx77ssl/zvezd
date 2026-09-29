@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import type { OverallStats, UserStat } from '../src/db/types';
+import type { OverallStats, UserLinkRow, UserStat } from '../src/db/types';
 import {
   buildStatsBody,
   buildStatsTitle,
+  buildUserChannelStats,
   formatRelative,
   formatUtc,
+  MAX_CHANNELS_PER_USER,
   type StatsMetrics,
 } from '../src/services/stats-builder';
 
@@ -139,5 +141,89 @@ describe('stats-builder', () => {
     expect(body.length).toBeLessThanOrEqual(2_000);
     expect(body).toContain('... and');
     expect(body.endsWith('[/LEFT]')).toBe(true);
+  });
+
+  describe('channel links', () => {
+    const rows: UserLinkRow[] = [
+      { userId: 10, username: 'alice', link: 'https://t.me/alpha_chan/1', count: 1 },
+      { userId: 10, username: 'alice', link: 'https://t.me/alpha_chan/2', count: 1 },
+      { userId: 10, username: 'alice', link: 'https://t.me/beta_chan', count: 3 },
+      { userId: 20, username: 'bob', link: 'https://t.me/alpha_chan/9', count: 1 },
+      { userId: 30, username: 'carol', link: 'https://t.me/solo_chan/7', count: 2 },
+    ];
+
+    it('aggregates channels per user and flags cross-user overlaps', () => {
+      const stats = buildUserChannelStats(rows);
+
+      const alice = stats.find((entry) => entry.userId === 10)!;
+      expect(alice.channels).toEqual([
+        { channel: 'beta_chan', count: 3 },
+        { channel: 'alpha_chan', count: 2 },
+      ]);
+      expect(alice.sharedWith).toEqual([{ userId: 20, username: 'bob' }]);
+
+      const bob = stats.find((entry) => entry.userId === 20)!;
+      expect(bob.channels).toEqual([{ channel: 'alpha_chan', count: 1 }]);
+      expect(bob.sharedWith).toEqual([{ userId: 10, username: 'alice' }]);
+
+      const carol = stats.find((entry) => entry.userId === 30)!;
+      expect(carol.sharedWith).toEqual([]);
+    });
+
+    it('renders a link spoiler and an overlap note under each user', () => {
+      const body = buildStatsBody({
+        sourceThreadUrl: 'https://lolz.team/threads/1/',
+        users: [
+          { userId: 10, username: 'alice', stars: 3, posts: 3 },
+          { userId: 20, username: 'bob', stars: 1, posts: 1 },
+          { userId: 30, username: 'carol', stars: 1, posts: 1 },
+        ],
+        overall: { users: 3, posts: 5, stars: 5 },
+        links: buildUserChannelStats(rows),
+        metrics: baseMetrics,
+        maxChars: 65_000,
+      });
+
+      expect(body).toContain('[SPOILER=links: 2]');
+      expect(body).toContain("[URL='https://t.me/beta_chan']t.me/beta_chan[/URL] 3");
+      expect(body).toContain("[URL='https://t.me/alpha_chan']t.me/alpha_chan[/URL] 2");
+      expect(body).toContain('  match: [USER=20]@bob[/USER]');
+      expect(body).toContain('[SPOILER=links: 1]');
+      expect(body).toContain('match: [USER=10]@alice[/USER]');
+    });
+
+    it('omits the spoiler when there are no links', () => {
+      const body = buildStatsBody({
+        sourceThreadUrl: 'https://lolz.team/threads/1/',
+        users,
+        overall,
+        metrics: baseMetrics,
+        maxChars: 65_000,
+      });
+      expect(body).not.toContain('[SPOILER');
+    });
+
+    it('caps the number of channels listed per user', () => {
+      const many: UserLinkRow[] = Array.from(
+        { length: MAX_CHANNELS_PER_USER + 5 },
+        (_, index) => ({
+          userId: 10,
+          username: 'alice',
+          link: `https://t.me/chan${String(index).padStart(2, '0')}/1`,
+          count: 1,
+        }),
+      );
+
+      const body = buildStatsBody({
+        sourceThreadUrl: 'https://lolz.team/threads/1/',
+        users: [{ userId: 10, username: 'alice', stars: 1, posts: 1 }],
+        overall: { users: 1, posts: 1, stars: 1 },
+        links: buildUserChannelStats(many),
+        metrics: baseMetrics,
+        maxChars: 65_000,
+      });
+
+      expect(body).toContain('+5 more');
+    });
   });
 });

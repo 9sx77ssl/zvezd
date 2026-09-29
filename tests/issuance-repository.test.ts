@@ -137,6 +137,23 @@ describe('IssuanceRepository', () => {
     expect(repo.overallStats()).toEqual({ users: 2, posts: 4, stars: 3 });
   });
 
+  it('groups stored links per user with submission counts', () => {
+    const base = { threadId: 1 };
+    repo.reserve({ ...base, postId: 1, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/1' });
+    repo.reserve({ ...base, postId: 2, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/2' });
+    repo.reserve({ ...base, postId: 3, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/bar' });
+    repo.reserve({ ...base, postId: 4, posterUserId: 10, posterUsername: 'alice', tgLink: 'https://t.me/foo/1' });
+    repo.reserve({ ...base, postId: 5, posterUserId: 20, posterUsername: 'bob', tgLink: 'https://t.me/foo/9' });
+    repo.reserve({ ...base, postId: 6, posterUserId: 20, posterUsername: 'bob', tgLink: null });
+
+    expect(repo.linkRowsByUser()).toEqual([
+      { userId: 10, username: 'alice', link: 'https://t.me/foo/1', count: 2 },
+      { userId: 10, username: 'alice', link: 'https://t.me/bar', count: 1 },
+      { userId: 10, username: 'alice', link: 'https://t.me/foo/2', count: 1 },
+      { userId: 20, username: 'bob', link: 'https://t.me/foo/9', count: 1 },
+    ]);
+  });
+
   it('exposes first/last star timestamps and recent counts', () => {
     const base = { threadId: 1, tgLink: null };
     repo.reserve({ ...base, postId: 1, posterUserId: 10, posterUsername: 'alice' });
