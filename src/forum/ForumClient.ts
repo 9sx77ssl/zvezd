@@ -1,7 +1,8 @@
 import type { z } from 'zod';
 import { backoffDelay, sleep } from '../core/async';
-import { ForumApiError, ForumRateLimitError } from '../core/errors';
+import { ForumApiError, ForumRateLimitError, ShuttingDownError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
+import type { AuthGate } from './AuthGate';
 import type { RateLimiter, ServerRateLimit } from './RateLimiter';
 import {
   type CommentsListResponse,
@@ -59,12 +60,13 @@ interface RequestOptions {
  */
 export class ForumClient {
   private readonly baseUrl: string;
-  private readonly token: string;
+  private token: string;
   private readonly timeoutMs: number;
   private readonly retry: RetryOptions;
   private readonly logger: Logger;
   private readonly readLimiter: RateLimiter;
   private readonly writeLimiter: RateLimiter;
+  private authGate?: AuthGate;
 
   lastRateLimit?: ServerRateLimit;
 
@@ -76,6 +78,33 @@ export class ForumClient {
     this.logger = options.logger;
     this.readLimiter = options.readLimiter;
     this.writeLimiter = options.writeLimiter;
+  }
+
+  /** Gate that parks requests while the forum rejects the token (401). */
+  setAuthGate(gate: AuthGate): void {
+    this.authGate = gate;
+  }
+
+  /** Swap the bearer token without restarting (used by the auth gate). */
+  setToken(token: string): void {
+    this.token = token;
+  }
+
+  /** Liveness check for the current token; never parks, used by the gate. */
+  async probeAuth(): Promise<boolean> {
+    try {
+      const response = await fetch(new URL('/users/me', this.baseUrl), {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${this.token}`,
+        },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   getPosts(params: GetPostsParams): Promise<PostsResponse> {
@@ -174,6 +203,7 @@ export class ForumClient {
     attempt: number,
     method: 'GET' | 'POST' | 'PUT',
   ): { retry: boolean; delayMs: number } {
+    if (err instanceof ShuttingDownError) return { retry: false, delayMs: 0 };
     if (attempt >= this.retry.attempts) return { retry: false, delayMs: 0 };
 
     if (err instanceof ForumRateLimitError) {
@@ -217,64 +247,76 @@ export class ForumClient {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
 
-    const headers: Record<string, string> = {
-      accept: 'application/json',
-      authorization: `Bearer ${this.token}`,
-    };
-    if (options.body !== undefined) headers['content-type'] = 'application/json';
+    for (;;) {
+      // Dead token (401): park here until auth is restored instead of failing.
+      await this.authGate?.waitWhilePaused();
 
-    const startedAt = Date.now();
-    this.logger.debug('Forum request', { method, path, query: options.query });
+      const headers: Record<string, string> = {
+        accept: 'application/json',
+        authorization: `Bearer ${this.token}`,
+      };
+      if (options.body !== undefined) headers['content-type'] = 'application/json';
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
+      const startedAt = Date.now();
+      this.logger.debug('Forum request', { method, path, query: options.query });
 
-    const text = await response.text();
-    let json: unknown;
-    try {
-      json = text ? JSON.parse(text) : undefined;
-    } catch {
-      json = undefined;
-    }
-
-    const rateLimit = this.extractRateLimit(json);
-    if (rateLimit) {
-      this.lastRateLimit = rateLimit;
-      (method === 'GET' ? this.readLimiter : this.writeLimiter).noteServerState(rateLimit);
-    }
-
-    if (response.status === 429) {
-      throw new ForumRateLimitError(this.resolveRetryAt(response, rateLimit), json);
-    }
-
-    if (!response.ok) {
-      throw new ForumApiError(
-        `Forum API responded with ${response.status} ${response.statusText}`,
-        response.status,
-        json,
-      );
-    }
-
-    const parsed = schema.safeParse(json);
-    if (!parsed.success) {
-      throw new ForumApiError('Forum API returned an unexpected payload', response.status, {
-        issues: parsed.error.issues,
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
+
+      const text = await response.text();
+      let json: unknown;
+      try {
+        json = text ? JSON.parse(text) : undefined;
+      } catch {
+        json = undefined;
+      }
+
+      const rateLimit = this.extractRateLimit(json);
+      if (rateLimit) {
+        this.lastRateLimit = rateLimit;
+        (method === 'GET' ? this.readLimiter : this.writeLimiter).noteServerState(rateLimit);
+      }
+
+      if (response.status === 401 && this.authGate) {
+        // The token is dead: freeze every request, wait for a working one and
+        // then repeat this very request as if nothing happened.
+        this.authGate.pause();
+        continue;
+      }
+
+      if (response.status === 429) {
+        throw new ForumRateLimitError(this.resolveRetryAt(response, rateLimit), json);
+      }
+
+      if (!response.ok) {
+        throw new ForumApiError(
+          `Forum API responded with ${response.status} ${response.statusText}`,
+          response.status,
+          json,
+        );
+      }
+
+      const parsed = schema.safeParse(json);
+      if (!parsed.success) {
+        throw new ForumApiError('Forum API returned an unexpected payload', response.status, {
+          issues: parsed.error.issues,
+        });
+      }
+
+      this.logger.debug('Forum response', {
+        method,
+        path,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        remaining: rateLimit?.remaining,
+      });
+
+      return parsed.data;
     }
-
-    this.logger.debug('Forum response', {
-      method,
-      path,
-      status: response.status,
-      durationMs: Date.now() - startedAt,
-      remaining: rateLimit?.remaining,
-    });
-
-    return parsed.data;
   }
 
   private extractRateLimit(json: unknown): ServerRateLimit | undefined {

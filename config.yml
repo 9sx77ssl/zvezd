@@ -90,6 +90,14 @@ database:
   # Env DB_PATH overrides this.
   path: ./data/star.db
 
+auth:
+  # File holding FORUM_TOKEN (re-read while the forum answers 401).
+  envPath: .env
+  # How often (ms) to re-read that file / probe the forum after a 401.
+  checkIntervalMs: 60000
+  # Repeat the "still waiting for a token" log every N checks (0 = never).
+  logEveryChecks: 10
+
 stats:
   # Live stats thread on the forum (edited every minute).
   enabled: true

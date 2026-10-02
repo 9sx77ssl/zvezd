@@ -19,6 +19,7 @@ export interface AppConfig {
   rateLimit: FileConfig['rateLimit'];
   retry: FileConfig['retry'];
   database: { path: string };
+  auth: FileConfig['auth'];
   telegram: { sessionPath: string; apiId: number; apiHash: string };
   stats: FileConfig['stats'];
   logging: FileConfig['logging'];
@@ -92,6 +93,7 @@ export function loadConfig(configPath = 'config.yml'): AppConfig {
     database: {
       path: envValues.DB_PATH ?? values.database.path,
     },
+    auth: values.auth,
     telegram: {
       sessionPath: envValues.TG_SESSION_PATH ?? values.telegram.sessionPath,
       apiId: envValues.TG_API_ID,

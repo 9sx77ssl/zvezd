@@ -76,3 +76,10 @@ export class NoPostsFoundError extends AppError {
     super(message, 'NO_POSTS_FOUND', options);
   }
 }
+
+/** The process is stopping while a request was parked (forum auth paused). */
+export class ShuttingDownError extends AppError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'SHUTTING_DOWN', options);
+  }
+}

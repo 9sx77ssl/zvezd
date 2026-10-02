@@ -36,6 +36,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },
     retry: { attempts: 3, delayMs: 1, maxDelayMs: 2, cooldownMs: 0 },
     database: { path: ':memory:' },
+    auth: { envPath: '.env', checkIntervalMs: 60_000, logEveryChecks: 10 },
     telegram: { sessionPath: ':memory:', apiId: 1, apiHash: 'hash' },
     stats: {
       enabled: false,

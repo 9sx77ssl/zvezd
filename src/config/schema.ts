@@ -98,6 +98,16 @@ export const fileConfigSchema = z.object({
       path: z.string().default('./data/star.db'),
     })
     .prefault({}),
+  auth: z
+    .object({
+      /** File holding FORUM_TOKEN; re-read while the forum rejects it. */
+      envPath: z.string().default('.env'),
+      /** How often to re-read the token file / probe the forum. */
+      checkIntervalMs: z.number().int().min(5_000).default(60_000),
+      /** Repeat the "still waiting" log every N checks, 0 disables it. */
+      logEveryChecks: z.number().int().min(0).default(10),
+    })
+    .prefault({}),
   stats: z.object({
     /** Live stats page shown as a forum thread. */
     enabled: z.boolean().default(true),

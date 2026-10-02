@@ -1,5 +1,6 @@
 import type { AppConfig } from '../config';
 import { sleep } from '../core/async';
+import { ShuttingDownError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import type { StateRepository } from '../db/repositories/StateRepository';
@@ -188,6 +189,7 @@ export class ScannerService {
           this.logHeartbeat('Idle heartbeat');
         }
       } catch (err) {
+        if (err instanceof ShuttingDownError) return;
         this.logger.error('Poll cycle failed', errorToLog(err));
       }
 
