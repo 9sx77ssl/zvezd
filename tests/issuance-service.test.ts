@@ -13,8 +13,9 @@ const CONFIRMATION_BODY = '[user="4371739"]intimacy[/user], +';
 
 interface CommentRow {
   post_comment_id: number;
-  poster_user_id: number;
-  post_comment_body: string;
+  user_id: number;
+  message: string;
+  message_state?: string;
 }
 
 interface SetupOptions {
@@ -95,8 +96,8 @@ function setup(options: SetupOptions = {}) {
         comment: {
           post_comment_id: id,
           post_id: postId,
-          poster_user_id: 1,
-          poster_username: 'bot',
+          user_id: 1,
+          username: 'bot',
         },
       };
     },
@@ -108,18 +109,20 @@ function setup(options: SetupOptions = {}) {
               {
                 post_comment_id: 777,
                 post_id: postId,
-                poster_user_id: 1,
-                poster_username: 'bot',
-                post_comment_body: CONFIRMATION_BODY,
+                user_id: 1,
+                username: 'bot',
+                message: CONFIRMATION_BODY,
+                message_state: 'visible',
               },
             ]
           : []),
         ...posted.map((p) => ({
           post_comment_id: p.id,
           post_id: postId,
-          poster_user_id: 1,
-          poster_username: 'bot',
-          post_comment_body: p.body,
+          user_id: 1,
+          username: 'bot',
+          message: p.body,
+          message_state: 'visible',
         })),
       ],
     }),
@@ -170,7 +173,7 @@ describe('IssuanceService', () => {
   it('skips posts that already have comments (lost database fallback)', async () => {
     const { service, repository, telegram } = setup();
 
-    const outcome = await service.process(makePost({ post_id: 101, post_comment_count: 2 }));
+    const outcome = await service.process(makePost({ post_id: 101, comment_count: 2 }));
 
     expect(outcome).toMatchObject({ kind: 'skipped', reason: 'comments_present' });
     expect(telegram.sendCalls).toBe(0);
@@ -181,7 +184,7 @@ describe('IssuanceService', () => {
     const { service, telegram, repository } = setup();
 
     const outcome = await service.process(
-      makePost({ post_id: 102, post_body_html: '<div>nope</div>' }),
+      makePost({ post_id: 102, message_html: '<div>nope</div>' }),
     );
 
     expect(outcome).toMatchObject({ kind: 'ignored', reason: 'no_tg_link' });
@@ -192,13 +195,11 @@ describe('IssuanceService', () => {
   it('ignores the first post and its own posts', async () => {
     const { service } = setup();
 
-    expect(
-      await service.process(makePost({ post_id: 103, post_is_first_post: true })),
-    ).toMatchObject({
+    expect(await service.process(makePost({ post_id: 103, is_first_post: true }))).toMatchObject({
       kind: 'ignored',
       reason: 'first_post',
     });
-    expect(await service.process(makePost({ post_id: 104, poster_user_id: 1 }))).toMatchObject({
+    expect(await service.process(makePost({ post_id: 104, user_id: 1 }))).toMatchObject({
       kind: 'ignored',
       reason: 'own_post',
     });
@@ -324,7 +325,12 @@ describe('IssuanceService', () => {
   it('does not post a duplicate confirmation when it already exists', async () => {
     const { service, repository, forum } = setup({
       existingComments: [
-        { post_comment_id: 777, poster_user_id: 1, post_comment_body: CONFIRMATION_BODY },
+        {
+          post_comment_id: 777,
+          user_id: 1,
+          message: CONFIRMATION_BODY,
+          message_state: 'visible',
+        },
       ],
     });
 
@@ -335,6 +341,27 @@ describe('IssuanceService', () => {
     expect(forum.createdBodies).toHaveLength(1);
     expect(isAd(forum.createdBodies[0]!)).toBe(true);
     expect(repository.findByPostId(114)?.status).toBe('commented');
+  });
+
+  it('does not adopt a comment that was deleted by moderators', async () => {
+    const { service, repository } = setup({
+      confirmationFailsOnce: true,
+      existingComments: [
+        {
+          post_comment_id: 777,
+          user_id: 1,
+          message: CONFIRMATION_BODY,
+          message_state: 'deleted',
+        },
+      ],
+    });
+
+    const outcome = await service.process(makePost({ post_id: 116 }));
+
+    // The API still returns soft-deleted comments; treating one as ours would
+    // mark the post handled while nobody can see our confirmation.
+    expect(outcome).toMatchObject({ kind: 'failed', retryable: true });
+    expect(repository.findByPostId(116)?.commentId).toBeNull();
   });
 
   it('adopts a confirmation that went through despite an error', async () => {
@@ -443,7 +470,7 @@ describe('IssuanceService', () => {
     const outcome = await service.process(
       makePost({
         post_id: 140,
-        post_body_html: '<a href="https://t.me/flexinout">https://t.me/flexinout</a>',
+        message_html: '<a href="https://t.me/flexinout">https://t.me/flexinout</a>',
       }),
     );
 
@@ -461,7 +488,7 @@ describe('IssuanceService', () => {
     const outcome = await service.process(
       makePost({
         post_id: 141,
-        post_body_html: '<a href="https://t.me/emptychannel">https://t.me/emptychannel</a>',
+        message_html: '<a href="https://t.me/emptychannel">https://t.me/emptychannel</a>',
       }),
     );
 

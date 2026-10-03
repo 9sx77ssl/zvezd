@@ -76,16 +76,18 @@ export class IssuanceService {
 
   async process(post: ForumPost): Promise<IssuanceOutcome> {
     const postId = post.post_id;
-    const log = this.logger.child('Post', { postId, username: post.poster_username });
+    const log = this.logger.child('Post', { postId, username: post.username });
 
-    if (post.post_is_first_post) return { kind: 'ignored', postId, reason: 'first_post' };
-    if (post.post_is_deleted) return { kind: 'ignored', postId, reason: 'deleted' };
-    if (post.post_is_published === false) return { kind: 'ignored', postId, reason: 'unpublished' };
-    if (post.poster_user_id === this.selfForumUserId) {
+    if (post.is_first_post) return { kind: 'ignored', postId, reason: 'first_post' };
+    if (post.message_state === 'deleted') return { kind: 'ignored', postId, reason: 'deleted' };
+    if (post.message_state !== 'visible') {
+      return { kind: 'ignored', postId, reason: 'unpublished' };
+    }
+    if (post.user_id === this.selfForumUserId) {
       return { kind: 'ignored', postId, reason: 'own_post' };
     }
 
-    const link = selectFirstTgLink(post.post_body_html);
+    const link = selectFirstTgLink(post.message_html);
     if (!link) {
       // Not persisted: users sometimes edit a post to add the link, so we
       // simply re-check it on the next poll.
@@ -108,8 +110,8 @@ export class IssuanceService {
     const created = this.repository.reserve({
       threadId: post.thread_id,
       postId,
-      posterUserId: post.poster_user_id,
-      posterUsername: post.poster_username,
+      posterUserId: post.user_id,
+      posterUsername: post.username,
       tgLink: link.url,
     });
     const record = this.repository.findByPostId(postId);
@@ -137,10 +139,10 @@ export class IssuanceService {
 
     // Second safety layer for a lost database: the forum post already has
     // comments, so we assume it was handled and never spend a star on it.
-    if (created && (post.post_comment_count ?? 0) > 0) {
+    if (created && (post.comment_count ?? 0) > 0) {
       this.repository.markSkipped(postId, 'comments_present');
       log.info('Skipped: post already has comments (assumed handled)', {
-        commentCount: post.post_comment_count,
+        commentCount: post.comment_count,
       });
       return { kind: 'skipped', postId, reason: 'comments_present' };
     }
@@ -171,7 +173,7 @@ export class IssuanceService {
       return {
         kind: 'processed',
         postId,
-        username: post.poster_username,
+        username: post.username,
         link: link.url,
         commentId,
         adCommentId,
@@ -431,8 +433,8 @@ export class IssuanceService {
 
   private renderBody(template: string, post: ForumPost, link: string, text?: string): string {
     return renderComment(template, {
-      user_id: post.poster_user_id,
-      username: post.poster_username,
+      user_id: post.user_id,
+      username: post.username,
       text: text ?? this.config.comment.text,
       stars: this.config.star.count,
       link,
@@ -480,13 +482,14 @@ export class IssuanceService {
     try {
       const { comments } = await this.forum.getComments(postId);
       const normalized = body.trim();
-      const mine = [...comments]
-        .reverse()
-        .find(
-          (comment) =>
-            comment.poster_user_id === this.selfForumUserId &&
-            comment.post_comment_body.trim() === normalized,
-        );
+      const mine = [...comments].reverse().find(
+        (comment) =>
+          // Deleted comments are still returned by the API; a moderated
+          // comment must not make us believe our reply is there.
+          comment.message_state === 'visible' &&
+          comment.user_id === this.selfForumUserId &&
+          comment.message.trim() === normalized,
+      );
       return mine?.post_comment_id ?? null;
     } catch (err) {
       this.logger.warn('Could not read existing comments', { postId, ...errorToLog(err) });

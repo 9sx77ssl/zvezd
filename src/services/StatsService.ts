@@ -82,10 +82,9 @@ export class StatsService {
   private async resolveFirstPostId(): Promise<number | null> {
     try {
       const response = await this.forum.getThread(this.config.stats.threadId);
-      const link = response.thread.links?.first_post;
-      if (!link) return null;
-      const match = /\/(\d+)\/?$/.exec(link);
-      return match?.[1] ? Number(match[1]) : null;
+      const id = response.thread.first_post_id;
+      if (!id) return null;
+      return id;
     } catch (err) {
       this.logger.error('Failed to read the stats thread', errorToLog(err));
       return null;

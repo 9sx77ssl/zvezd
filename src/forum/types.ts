@@ -17,42 +17,65 @@ export const systemInfoSchema = z.looseObject({
 export type SystemInfo = z.infer<typeof systemInfoSchema>;
 export type RateLimit = z.infer<typeof rateLimitSchema>;
 
+/**
+ * A forum post as returned by `GET /posts`.
+ *
+ * Lolz renamed the payload fields in the 2026-10 API update: `post_body` →
+ * `message`, `poster_user_id` → `user_id`, `post_create_date` → `post_date`,
+ * `post_comment_count` → `comment_count`, `post_is_first_post` → `is_first_post`
+ * and the publish/delete flags collapsed into `message_state`.
+ *
+ * Identity, timing and the fields we rely on are required on purpose: when the
+ * API renames them again we want a loud parse error instead of a bot that
+ * silently stops issuing stars.
+ */
 export const forumPostSchema = z.looseObject({
   post_id: z.number(),
   thread_id: z.number(),
-  poster_user_id: z.number(),
-  poster_username: z.string(),
-  poster_username_html: z.string().optional(),
-  poster_is_banned: z.union([z.number(), z.boolean()]).optional(),
-  poster_is_staff: z.union([z.number(), z.boolean()]).optional(),
-  post_create_date: z.number(),
-  post_body: z.string().default(''),
-  post_body_html: z.string().default(''),
-  post_body_plain_text: z.string().default(''),
-  post_update_date: z.number().optional(),
-  post_is_first_post: z.boolean(),
-  post_is_published: z.boolean().optional(),
-  post_is_deleted: z.boolean().optional(),
-  post_is_sticked: z.boolean().optional(),
-  post_comment_count: z.number().optional(),
+  user_id: z.number(),
+  username: z.string(),
+  post_date: z.number(),
+  is_first_post: z.boolean(),
+  /** `visible`, `deleted`, `moderated`... */
+  message_state: z.string(),
+  /** Raw BBCode; kept for logs. */
+  message: z.string().default(''),
+  /** Rendered body — this is where Telegram links are parsed from. */
+  message_html: z.string(),
+  message_plain_text: z.string().optional(),
+  username_html: z.string().optional(),
+  avatar_url: z.string().optional(),
+  view_url: z.string().optional(),
+  update_date: z.number().optional(),
+  comment_count: z.number().optional(),
+  likes: z.number().optional(),
+  is_banned: z.boolean().optional(),
+  is_staff: z.boolean().optional(),
+  is_sticked: z.boolean().optional(),
+  is_liked: z.boolean().optional(),
+  signature: z.string().optional(),
+  signature_html: z.string().optional(),
+  thread_is_closed: z.boolean().optional(),
+  thread_is_deleted: z.boolean().optional(),
 });
 
 export type ForumPost = z.infer<typeof forumPostSchema>;
 
 export const forumThreadSchema = z.looseObject({
   thread_id: z.number(),
-  forum_id: z.number().optional(),
-  thread_title: z.string().optional(),
-  thread_post_count: z.number().optional(),
-  thread_is_deleted: z.boolean().optional(),
-  thread_is_closed: z.boolean().optional(),
-  links: z
-    .looseObject({
-      permalink: z.string().optional(),
-      first_post: z.string().optional(),
-      last_post: z.string().optional(),
-    })
-    .optional(),
+  node_id: z.number().optional(),
+  title: z.string().optional(),
+  post_count: z.number().optional(),
+  reply_count: z.number().optional(),
+  first_post_id: z.number().optional(),
+  last_post_id: z.number().optional(),
+  view_url: z.string().optional(),
+  /** `visible` when the thread is published. */
+  discussion_state: z.string().optional(),
+  discussion_open: z.boolean().optional(),
+  is_hidden: z.boolean().optional(),
+  user_id: z.number().optional(),
+  username: z.string().optional(),
 });
 
 export type ForumThread = z.infer<typeof forumThreadSchema>;
@@ -78,14 +101,15 @@ export const postCommentSchema = z.looseObject({
   post_comment_id: z.number(),
   post_id: z.number(),
   thread_id: z.number().optional(),
-  poster_user_id: z.number(),
-  poster_username: z.string(),
-  post_comment_body: z.string().default(''),
-  post_comment_body_html: z.string().optional(),
-  post_comment_body_plain_text: z.string().optional(),
-  post_comment_is_deleted: z.boolean().optional(),
-  post_comment_is_published: z.boolean().optional(),
-  post_comment_create_date: z.number().optional(),
+  user_id: z.number(),
+  username: z.string(),
+  message: z.string().default(''),
+  message_state: z.string().default('visible'),
+  message_html: z.string().optional(),
+  message_plain_text: z.string().optional(),
+  comment_date: z.number().optional(),
+  username_html: z.string().optional(),
+  likes: z.number().optional(),
 });
 
 export type PostComment = z.infer<typeof postCommentSchema>;
