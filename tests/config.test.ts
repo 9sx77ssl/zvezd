@@ -25,17 +25,26 @@ describe('file config schema', () => {
   });
 });
 
-describe('env boolean parsing', () => {
-  it('accepts common truthy and falsy spellings', () => {
-    expect(envSchema.parse({ ...baseEnv, DRY_RUN: 'YES' }).DRY_RUN).toBe(true);
-    expect(envSchema.parse({ ...baseEnv, DRY_RUN: '1' }).DRY_RUN).toBe(true);
-    expect(envSchema.parse({ ...baseEnv, DRY_RUN: 'on' }).DRY_RUN).toBe(true);
-    expect(envSchema.parse({ ...baseEnv, LOG_PRETTY: 'off' }).LOG_PRETTY).toBe(false);
-    expect(envSchema.parse({ ...baseEnv, LOG_PRETTY: '0' }).LOG_PRETTY).toBe(false);
-    expect(envSchema.parse(baseEnv).DRY_RUN).toBeUndefined();
+describe('env schema (secrets only)', () => {
+  it('accepts the three credentials', () => {
+    const env = envSchema.parse(baseEnv);
+
+    expect(env.FORUM_TOKEN).toBe('t');
+    expect(env.TG_API_ID).toBe(1);
+    expect(env.TG_API_HASH).toBe('h');
   });
 
-  it('rejects nonsense values instead of silently disabling', () => {
-    expect(envSchema.safeParse({ ...baseEnv, DRY_RUN: 'maybe' }).success).toBe(false);
+  it('rejects missing or invalid credentials', () => {
+    expect(envSchema.safeParse({ TG_API_ID: '1', TG_API_HASH: 'h' }).success).toBe(false);
+    expect(
+      envSchema.safeParse({ FORUM_TOKEN: 't', TG_API_ID: 'nope', TG_API_HASH: 'h' }).success,
+    ).toBe(false);
+  });
+
+  it('ignores injected override variables', () => {
+    const env = envSchema.parse({ ...baseEnv, DRY_RUN: 'true', POLL_INTERVAL_MS: '1' });
+
+    expect('DRY_RUN' in env).toBe(false);
+    expect('POLL_INTERVAL_MS' in env).toBe(false);
   });
 });

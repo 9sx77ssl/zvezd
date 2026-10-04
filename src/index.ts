@@ -4,6 +4,13 @@ import { errorToLog, Logger } from './core/logger';
 
 async function main(): Promise<void> {
   const config = loadConfig();
+
+  // `bun run dry` passes `--dry`: simulate without spending stars. The
+  // environment is reserved for credentials only.
+  if (process.argv.includes('--dry')) {
+    config.star = { ...config.star, dryRun: true };
+  }
+
   const logger = Logger.create({ level: config.logging.level, pretty: config.logging.pretty });
 
   const app = await Application.create(config, logger);

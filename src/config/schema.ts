@@ -1,24 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_AD_TEMPLATE } from './defaults';
 
-/** Parse common truthy/falsy env spellings; reject anything else loudly. */
-const booleanString = (name: string) =>
-  z
-    .string()
-    .optional()
-    .superRefine((value, ctx) => {
-      if (value === undefined) return;
-      const normalized = value.trim().toLowerCase();
-      if (!['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'].includes(normalized)) {
-        ctx.addIssue({ code: 'custom', message: `${name} must be a boolean (true/false)` });
-      }
-    })
-    .transform((value) =>
-      value === undefined
-        ? undefined
-        : ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase()),
-    );
-
 /** Shape of `config.yml` before secrets are injected from the environment. */
 export const fileConfigSchema = z.object({
   forum: z.object({
@@ -159,18 +141,12 @@ export const fileConfigSchema = z.object({
 
 export type FileConfig = z.infer<typeof fileConfigSchema>;
 
-/** Secrets and optional overrides read from the environment. */
+/**
+ * Secrets read from `.env`. Everything else lives in `config.yml`; the
+ * environment is intentionally limited to credentials only.
+ */
 export const envSchema = z.object({
   FORUM_TOKEN: z.string().min(1, 'FORUM_TOKEN is required'),
   TG_API_ID: z.coerce.number().int().positive('TG_API_ID must be a positive integer'),
   TG_API_HASH: z.string().min(1, 'TG_API_HASH is required'),
-  FORUM_BASE_URL: z.string().url().optional(),
-  FORUM_THREAD_ID: z.coerce.number().int().positive().optional(),
-  DB_PATH: z.string().optional(),
-  TG_SESSION_PATH: z.string().optional(),
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).optional(),
-  LOG_PRETTY: booleanString('LOG_PRETTY'),
-  STAR_COUNT: z.coerce.number().int().positive().optional(),
-  POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).optional(),
-  DRY_RUN: booleanString('DRY_RUN'),
 });

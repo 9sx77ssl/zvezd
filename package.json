@@ -1,5 +1,5 @@
 {
-  "name": "lolz-star-bot",
+  "name": "zvezd",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   "packageManager": "bun@1.4.2",
   "scripts": {
     "start": "bun run src/index.ts",
-    "dry": "DRY_RUN=true bun run src/index.ts",
+    "dry": "bun run src/index.ts --dry",
     "dev": "bun --watch src/index.ts",
     "login": "bun run src/login.ts",
     "typecheck": "tsc --noEmit",

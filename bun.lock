@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "lolz-star-bot",
+      "name": "zvezd",
       "dependencies": {
         "@mtcute/bun": "^0.32.3",
         "pino": "^10.4.0",

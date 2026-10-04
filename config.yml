@@ -1,13 +1,13 @@
 # ------------------------------------------------------------------
-# Lolz Star Bot — рабочая конфигурация (секреты в .env, не здесь).
+# zvezd — рабочая конфигурация (секреты в .env, не здесь).
+# Всё поведение настраивается здесь; .env хранит только ключи.
 # Все длительности — в миллисекундах, если не сказано иначе.
-# Переменные окружения из .env переопределяют значения ниже.
 # ------------------------------------------------------------------
 
 forum:
-  # Адрес API форума. Переопределяется FORUM_BASE_URL.
+  # Адрес API форума.
   baseUrl: https://api.lolz.team
-  # Тема, которую следим. Переопределяется FORUM_THREAD_ID.
+  # Тема, которую следим.
   threadId: 10335815
   # Таймаут одного запроса, мс.
   requestTimeoutMs: 30000
@@ -15,7 +15,7 @@ forum:
   order: natural_reverse
 
 polling:
-  # Как часто проверять новые посты, мс. Переопределяется POLL_INTERVAL_MS.
+  # Как часто проверять новые посты, мс.
   intervalMs: 15000
   # Постов за один запрос (максимум 20).
   pageLimit: 20
@@ -37,9 +37,9 @@ balance:
   checkIntervalMs: 60000
 
 star:
-  # Сколько звёзд ставить на пост. Переопределяется STAR_COUNT.
+  # Сколько звёзд ставить на пост.
   count: 1
-  # Режим симуляции без трат (true/1/yes/on). Переопределяется DRY_RUN.
+  # Режим симуляции без трат (запуск: `bun run dry`).
   dryRun: false
 
 comment:
@@ -88,7 +88,7 @@ retry:
   failedPostCooldownMs: 3600000
 
 database:
-  # Путь к базе SQLite. Переопределяется DB_PATH.
+  # Путь к базе SQLite.
   path: ./data/star.db
 
 auth:
@@ -113,12 +113,11 @@ stats:
     enabled: true
 
 telegram:
-  # Путь к SQLite-сессии Telegram. Переопределяется TG_SESSION_PATH.
-  # Создаётся командой `bun run login`, храни в секрете.
+  # Путь к файлу сессии Telegram (создаётся `bun run login`). Держи в секрете.
   sessionPath: ./data/tg.session
 
 logging:
-  # Уровень логов: trace/debug/info/warn/error/fatal. Переопределяется LOG_LEVEL.
+  # Уровень логов: trace/debug/info/warn/error/fatal.
   level: info
-  # Человекочитаемый вывод логов. Переопределяется LOG_PRETTY.
+  # Человекочитаемый вывод логов.
   pretty: true

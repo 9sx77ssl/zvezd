@@ -1,4 +1,4 @@
-// PM2 process definition for the Lolz Star Bot.
+// PM2 process definition for zvezd.
 // Start with: pm2 start ecosystem.config.cjs
 
 const { execSync } = require('node:child_process');
