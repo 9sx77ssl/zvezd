@@ -1,11 +1,12 @@
 # AGENTS.md
 
-`zvezd` — Bun + TypeScript bot for the lolz.team forum. In a watched thread users
-post links to their Telegram channel/post; the bot gives each submission a paid
-Telegram Star (through a dedicated mtcute user session), leaves a confirmation
-comment and an ad comment, and maintains a live "stats" thread with the
-leaderboard. It is a self-hosted promo/engagement tool, not a library or
-framework. There is no build step — Bun runs TypeScript directly.
+`zvezd` — Bun + TypeScript bot for the lolz.team giveaway ("халява") section. In
+a watched thread users post links to their Telegram channel/post; the bot gives
+each submission a paid Telegram Star (through a dedicated mtcute user session),
+leaves a confirmation comment and an ad comment, and maintains a live "stats"
+thread with the leaderboard. In return users like/reply — it is a self-hosted
+promo/engagement tool, not a library or framework. There is no build step — Bun
+runs TypeScript directly.
 
 How it works end to end: `ScannerService` walks/polls the watched thread ->
 `IssuanceService` runs checks and a persisted state machine per post
