@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import {
   channelOfLink,
+  distinctChannelCount,
   extractTgPostLinks,
   parseTgChannelLink,
   parseTgPostLink,
   selectFirstTgLink,
   selectFirstTgPostLink,
+  selectLinkCandidates,
 } from '../src/telegram/link-parser';
 
 describe('link-parser', () => {
@@ -121,5 +123,38 @@ describe('link-parser', () => {
     ]) {
       expect(selectFirstTgLink(link)).toBeNull();
     }
+  });
+
+  it('orders star candidates by appearance, ignoring non-TG hosts', () => {
+    const html =
+      '<a href="https://youtube.com/watch?v=x">yt</a> ' +
+      '<a href="https://t.me/paid">paid</a> ' +
+      '<a href="https://t.me/good/7">good</a> ' +
+      '<a href="https://t.me/empty">empty</a>';
+
+    expect(selectLinkCandidates(html).map((link) => link.url)).toEqual([
+      'https://t.me/paid',
+      'https://t.me/good/7',
+      'https://t.me/empty',
+    ]);
+  });
+
+  it('drops a bare channel link when the same channel has a post link', () => {
+    const html =
+      '<a href="https://t.me/fooo">c</a> <a href="https://t.me/fooo/5">p</a> <a href="https://t.me/barr">b</a>';
+
+    expect(selectLinkCandidates(html).map((link) => link.url)).toEqual([
+      'https://t.me/fooo/5',
+      'https://t.me/barr',
+    ]);
+  });
+
+  it('counts distinct channels for the multi-link note', () => {
+    const html =
+      '<a href="https://t.me/fooo">c</a> <a href="https://t.me/fooo/5">p</a> <a href="https://t.me/barr">b</a>';
+    expect(distinctChannelCount(selectLinkCandidates(html))).toBe(2);
+    expect(distinctChannelCount(selectLinkCandidates('<a href="https://t.me/fooo/5">p</a>'))).toBe(
+      1,
+    );
   });
 });

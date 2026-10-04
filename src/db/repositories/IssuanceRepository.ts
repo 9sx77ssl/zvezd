@@ -158,6 +158,13 @@ export class IssuanceRepository {
       .run(chatId, messageId, Date.now(), postId);
   }
 
+  /** Store which of several links in the post was actually starred. */
+  setLink(postId: number, link: string): void {
+    this.db
+      .query('UPDATE issuances SET tg_link = ?, updated_at = ? WHERE post_id = ?')
+      .run(link, Date.now(), postId);
+  }
+
   /** First (confirmation) comment has been posted. */
   markConfirmed(postId: number, commentId: number | null): void {
     this.db

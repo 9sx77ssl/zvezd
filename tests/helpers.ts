@@ -31,6 +31,8 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       noPostsFoundText: 'не нашёл пост в канале, скиньте ссылку на конкретный пост!',
       noLinkFoundText: 'не нашёл ссылку в посте, скиньте ссылку на канал или конкретный пост!',
       linkUnresolvableText: 'не смог открыть ссылку, проверьте её и скиньте ещё раз!',
+      multipleLinksText:
+        'в посте несколько ссылок, звезда поставлена только за одну — присылайте одну!',
       ad: { enabled: true, template: DEFAULT_AD_TEMPLATE },
     },
     rateLimit: { readPerMinute: 240, writePerMinute: 20 },

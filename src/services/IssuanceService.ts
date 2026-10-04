@@ -23,12 +23,30 @@ import type { IssuanceRecord } from '../db/types';
 import type { ForumClient } from '../forum/ForumClient';
 import type { ForumPost } from '../forum/types';
 import { runPreChecks } from '../issuance/checks';
-import { selectFirstTgLink, type TgLink } from '../telegram/link-parser';
+import {
+  distinctChannelCount,
+  parseTgChannelLink,
+  parseTgPostLink,
+  selectLinkCandidates,
+  type TgLink,
+} from '../telegram/link-parser';
 import type { TelegramService } from '../telegram/TelegramService';
 import { renderComment } from './comment-renderer';
 
 /** Outcome-only statuses that are never persisted as such. */
 export type SyntheticStatus = 'failed_permanent' | 'attempts_exhausted';
+
+/** A candidate link resolved to a concrete Telegram message. */
+interface ResolvedTarget {
+  link: TgLink;
+  chatId: number;
+  messageId: number;
+}
+
+function linkFromUrl(url: string | null): TgLink | null {
+  if (!url) return null;
+  return parseTgPostLink(url) ?? parseTgChannelLink(url);
+}
 
 export type IssuanceOutcome =
   | {
@@ -96,8 +114,8 @@ export class IssuanceService {
   async process(post: ForumPost): Promise<IssuanceOutcome> {
     const postId = post.post_id;
     const log = this.logger.child('Post', { postId, username: post.username });
-    const link = selectFirstTgLink(post.message_html);
-    const ctx = { selfForumUserId: this.selfForumUserId, link };
+    const links = selectLinkCandidates(post.message_html);
+    const ctx = { selfForumUserId: this.selfForumUserId, link: links[0] ?? null };
 
     // Silent pre-reservation checks (first post, deleted/hidden, own post).
     const pre = runPreChecks(post, ctx);
@@ -107,10 +125,12 @@ export class IssuanceService {
     }
 
     if (this.config.star.dryRun) {
-      if (link && !this.dryRunReported.has(postId)) {
+      const first = links[0];
+      if (first && !this.dryRunReported.has(postId)) {
         this.dryRunReported.add(postId);
         log.info('Dry run: would issue star', {
-          link: link.url,
+          link: first.url,
+          candidates: links.length,
           stars: this.config.star.count,
           comment: this.config.comment.enabled,
         });
@@ -123,7 +143,7 @@ export class IssuanceService {
       postId,
       posterUserId: post.user_id,
       posterUsername: post.username,
-      tgLink: link?.url ?? null,
+      tgLink: links[0]?.url ?? null,
     });
     const record = this.repository.findByPostId(postId);
     if (!record) return { kind: 'failed', postId, retryable: true, error: 'reservation_lost' };
@@ -161,32 +181,39 @@ export class IssuanceService {
 
     this.repository.bumpAttempts(postId);
 
-    // User-facing checks (missing link, ...) are evaluated after the claim so
-    // the notice can be persisted; they throw a NoticeError handled below.
-    const noticeLink = link?.url ?? '';
+    // User-facing checks (missing link, unusable links, ...) are evaluated
+    // after the claim so the notice can be persisted; they throw a NoticeError
+    // handled below.
+    const noticeLink = links[0]?.url ?? '';
 
     try {
-      if (!link) throw new NoLinkFoundError(`Post has no Telegram link: ${postId}`);
+      if (links.length === 0) throw new NoLinkFoundError(`Post has no Telegram link: ${postId}`);
+
+      // Try the links in order and star the first one Telegram actually accepts
+      // (YouTube/other hosts are already filtered out by the parser).
+      const target = await this.pickTarget(post, links, record, log);
+      const multipleLinks = distinctChannelCount(links) > 1;
 
       let balance: number | undefined;
 
       const needsStar = record.status !== 'star_sent' && record.status !== 'confirmed';
       if (needsStar) {
-        balance = await this.issueStar(post, link, log, record);
+        balance = await this.issueStar(post, target, log, record);
       }
 
       let commentId: number | null = record.commentId;
       if (record.status !== 'confirmed') {
-        commentId = await this.writeConfirmation(post, link.url, log);
+        const note = multipleLinks ? this.config.comment.multipleLinksText : undefined;
+        commentId = await this.writeConfirmation(post, target.link.url, log, note);
       }
 
-      const adCommentId = await this.writeAd(post, link.url, log);
+      const adCommentId = await this.writeAd(post, target.link.url, log);
 
       return {
         kind: 'processed',
         postId,
         username: post.username,
-        link: link.url,
+        link: target.link.url,
         commentId,
         adCommentId,
         balance,
@@ -219,26 +246,25 @@ export class IssuanceService {
 
   private async issueStar(
     post: ForumPost,
-    link: TgLink,
+    target: ResolvedTarget,
     log: Logger,
     record: IssuanceRecord,
   ): Promise<number> {
-    const target = await this.resolveTarget(post, link, log, record);
-
     const expected = this.config.star.count;
+    const { link, chatId, messageId } = target;
 
     // The baseline is how many of our paid reactions were on this exact
     // Telegram message *before* the first attempt for THIS forum post.
     // It lets the same TG post be starred again on a later submission while
     // keeping a retry of the very same submission idempotent.
-    const current = await this.telegram.getOwnPaidReactionCount(target.chatId, target.messageId);
+    const current = await this.telegram.getOwnPaidReactionCount(chatId, messageId);
     if (record.tgBaseline === null) {
       this.repository.setStarBaseline(post.post_id, current);
     }
     const baseline = record.tgBaseline ?? current;
 
     if (current >= baseline + expected) {
-      this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
+      this.repository.markStarSent(post.post_id, String(chatId), messageId);
       const balance = await this.telegram.getBalance();
       log.info('Star already sent for this submission, not charging again', {
         link: link.url,
@@ -251,28 +277,24 @@ export class IssuanceService {
 
     // The channel must accept paid reactions; otherwise we tell the user and
     // still post the ad, instead of failing forever.
-    const paidEnabled = await this.telegram.hasPaidReactions(target.chatId);
+    const paidEnabled = await this.telegram.hasPaidReactions(chatId);
     if (!paidEnabled) {
       throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link.url}`);
     }
 
     log.info('Sending star reaction', {
       link: link.url,
-      chatId: target.chatId,
-      messageId: target.messageId,
+      chatId,
+      messageId,
       count: expected,
       baseline,
     });
 
     try {
       await this.cooldown.wait();
-      const result = await this.telegram.sendStarReaction(
-        target.chatId,
-        target.messageId,
-        expected,
-      );
+      const result = await this.telegram.sendStarReaction(chatId, messageId, expected);
 
-      this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
+      this.repository.markStarSent(post.post_id, String(chatId), messageId);
 
       const balance = await this.telegram.getBalance();
       log.info('Star confirmed', {
@@ -288,9 +310,9 @@ export class IssuanceService {
       // `updateEditChannelMessage` instead of `updateMessageReactions`) even
       // though the reaction was applied. Verify before treating it as failed.
       await sleep(this.config.pacing.starVerifyDelayMs);
-      const after = await this.telegram.getOwnPaidReactionCount(target.chatId, target.messageId);
+      const after = await this.telegram.getOwnPaidReactionCount(chatId, messageId);
       if (after >= baseline + expected) {
-        this.repository.markStarSent(post.post_id, String(target.chatId), target.messageId);
+        this.repository.markStarSent(post.post_id, String(chatId), messageId);
         const balance = await this.telegram.getBalance();
         log.warn('Star send threw but the reaction is present; treating as sent', {
           link: link.url,
@@ -306,7 +328,7 @@ export class IssuanceService {
 
       // The send failed and no reaction was applied. If the channel simply has
       // paid reactions disabled, tell the user instead of retrying forever.
-      const stillEnabled = await this.telegram.hasPaidReactions(target.chatId);
+      const stillEnabled = await this.telegram.hasPaidReactions(chatId);
       if (!stillEnabled) {
         throw new PaidReactionsDisabledError(`Channel has paid reactions disabled: ${link.url}`, {
           cause: err,
@@ -318,35 +340,61 @@ export class IssuanceService {
   }
 
   /**
-   * Resolve the Telegram target for a link, persisting it so retries reuse the
-   * same message. Bare channel links resolve to the channel's latest post.
+   * Pick the first candidate Telegram can actually star: resolvable (a specific
+   * post, or a bare channel that has posts) and accepting paid reactions. A
+   * target resolved on an earlier attempt is reused so retries stick to the
+   * same message.
    */
-  private async resolveTarget(
+  private async pickTarget(
     post: ForumPost,
-    link: TgLink,
-    log: Logger,
+    links: readonly TgLink[],
     record: IssuanceRecord,
-  ): Promise<{ chatId: number; messageId: number }> {
+    log: Logger,
+  ): Promise<ResolvedTarget> {
     if (record.tgChatId && record.tgMessageId) {
-      return { chatId: Number(record.tgChatId), messageId: record.tgMessageId };
+      const link = linkFromUrl(record.tgLink) ?? links[0];
+      if (link) {
+        return { link, chatId: Number(record.tgChatId), messageId: record.tgMessageId };
+      }
     }
 
-    if (link.kind === 'post') {
-      const resolved = await this.telegram.resolvePost(link.url);
-      if (!resolved)
-        throw new LinkUnresolvableError(`Telegram post is not resolvable: ${link.url}`);
+    let firstFailure: 'unresolvable' | 'no_posts' | 'paid_disabled' | null = null;
+
+    for (const link of links) {
+      const resolved =
+        link.kind === 'post'
+          ? await this.telegram.resolvePost(link.url)
+          : await this.telegram.resolveLatestPost(link.username);
+
+      if (!resolved) {
+        firstFailure ??= link.kind === 'post' ? 'unresolvable' : 'no_posts';
+        continue;
+      }
+
+      if (!(await this.telegram.hasPaidReactions(resolved.chatId))) {
+        firstFailure ??= 'paid_disabled';
+        continue;
+      }
+
       this.repository.setTarget(post.post_id, String(resolved.chatId), resolved.messageId);
-      return { chatId: resolved.chatId, messageId: resolved.messageId };
+      if (record.tgLink !== link.url) this.repository.setLink(post.post_id, link.url);
+      log.info('Picked a star-able Telegram target', {
+        link: link.url,
+        candidates: links.length,
+        chatId: resolved.chatId,
+        messageId: resolved.messageId,
+      });
+      return { link, chatId: resolved.chatId, messageId: resolved.messageId };
     }
 
-    const latest = await this.telegram.resolveLatestPost(link.username);
-    if (!latest) throw new NoPostsFoundError(`Channel has no posts: ${link.url}`);
-    this.repository.setTarget(post.post_id, String(latest.chatId), latest.messageId);
-    log.info('Resolved bare channel link to its latest post', {
-      channel: link.username,
-      messageId: latest.messageId,
-    });
-    return latest;
+    switch (firstFailure) {
+      case 'paid_disabled':
+        throw new PaidReactionsDisabledError(`No candidate accepts stars: ${post.post_id}`);
+      case 'no_posts':
+        throw new NoPostsFoundError(`No candidate has posts: ${post.post_id}`);
+      default:
+        throw new LinkUnresolvableError(`No resolvable candidate link: ${post.post_id}`);
+    }
   }
 
   /**
@@ -392,13 +440,15 @@ export class IssuanceService {
     post: ForumPost,
     link: string,
     log: Logger,
+    note?: string,
   ): Promise<number | null> {
     if (!this.config.comment.enabled) {
       this.repository.markConfirmed(post.post_id, null);
       return null;
     }
 
-    const body = this.renderBody(this.config.comment.template, post, link);
+    const rendered = this.renderBody(this.config.comment.template, post, link);
+    const body = note ? `${rendered}\n\n${note}` : rendered;
 
     const existing = await this.findOwnCommentByBody(post.post_id, body);
     if (existing !== null) {

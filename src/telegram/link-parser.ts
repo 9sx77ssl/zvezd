@@ -135,3 +135,25 @@ export function selectFirstTgLink(html: string): TgLink | null {
     null
   );
 }
+
+/**
+ * Ordered candidates to try when starring a post: every extracted link in
+ * order of appearance, minus a bare channel link when the same channel also
+ * has a specific post link (the post is the more precise target).
+ */
+export function selectLinkCandidates(html: string): TgLink[] {
+  const links = extractTgLinks(html);
+  const channelsWithPost = new Set(
+    links
+      .filter((link): link is TgPostLink => link.kind === 'post')
+      .map((link) => link.username.toLowerCase()),
+  );
+  return links.filter(
+    (link) => link.kind === 'post' || !channelsWithPost.has(link.username.toLowerCase()),
+  );
+}
+
+/** How many distinct channels a set of links points at. */
+export function distinctChannelCount(links: readonly TgLink[]): number {
+  return new Set(links.map((link) => link.username.toLowerCase())).size;
+}

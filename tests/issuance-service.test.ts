@@ -31,6 +31,9 @@ interface SetupOptions {
   paidReactionsDisabled?: boolean;
   sendThrowsPaidDisabled?: boolean;
   latestPost?: { chatId: number; messageId: number } | null;
+  resolvePostMap?: Record<string, { chatId: number; messageId: number } | null>;
+  resolveLatestMap?: Record<string, { chatId: number; messageId: number } | null>;
+  paidDisabledChats?: number[];
 }
 
 const isAd = (body: string): boolean => body.trimStart().startsWith('[ad=');
@@ -39,25 +42,33 @@ function setup(options: SetupOptions = {}) {
   const db = new Database(':memory:', testLogger);
   const repository = new IssuanceRepository(db);
 
+  const sent: { chatId: number; messageId: number; count: number }[] = [];
+
   const telegram = {
     sendCalls: 0,
     resolveCalls: 0,
     latestCalls: 0,
     ownedCount: options.ownedCount ?? 0,
-    resolvePost: async () => {
+    resolvePost: async (url: string) => {
       telegram.resolveCalls += 1;
+      if (options.resolvePostMap) return (options.resolvePostMap[url] ?? null) as never;
       return options.resolveNull ? null : { chatId: -100123, messageId: 25, message: {} as never };
     },
-    resolveLatestPost: async () => {
+    resolveLatestPost: async (username: string) => {
       telegram.latestCalls += 1;
+      if (options.resolveLatestMap) return options.resolveLatestMap[username] ?? null;
       return options.latestPost === undefined
         ? { chatId: -100777, messageId: 42 }
         : options.latestPost;
     },
     getOwnPaidReactionCount: async () => telegram.ownedCount,
-    hasPaidReactions: async () => !options.paidReactionsDisabled,
-    sendStarReaction: async () => {
+    hasPaidReactions: async (chatId: number) => {
+      if (options.paidDisabledChats) return !options.paidDisabledChats.includes(chatId);
+      return !options.paidReactionsDisabled;
+    },
+    sendStarReaction: async (chatId: number, messageId: number, count: number) => {
       telegram.sendCalls += 1;
+      sent.push({ chatId, messageId, count });
       if (options.sendThrowsPaidDisabled) {
         throw new PaidReactionsDisabledError('paid reactions disabled');
       }
@@ -139,7 +150,7 @@ function setup(options: SetupOptions = {}) {
     cooldown: new Cooldown(0),
   });
 
-  return { db, repository, telegram, forum, service };
+  return { db, repository, telegram, forum, service, sent };
 }
 
 const confirmationCount = (bodies: string[]): number => bodies.filter((b) => !isAd(b)).length;
@@ -512,5 +523,79 @@ describe('IssuanceService', () => {
       '[user="4371739"]intimacy[/user], не нашёл пост в канале, скиньте ссылку на конкретный пост!',
     );
     expect(repository.findByPostId(141)?.skipReason).toBe('no_posts_found');
+  });
+
+  it('picks the first star-able link among many candidates', async () => {
+    const { service, forum, repository, sent } = setup({
+      resolvePostMap: { 'https://t.me/goodchannel/7': { chatId: -1002, messageId: 7 } },
+      resolveLatestMap: {
+        paidchannel: { chatId: -1001, messageId: 1 },
+        emptychannel: null,
+      },
+      paidDisabledChats: [-1001],
+    });
+
+    const html =
+      '<a href="https://youtube.com/watch?v=x">yt</a> ' +
+      '<a href="https://t.me/paidchannel">paid</a> ' +
+      '<a href="https://t.me/goodchannel/7">good</a> ' +
+      '<a href="https://t.me/emptychannel">empty</a>';
+
+    const outcome = await service.process(makePost({ post_id: 150, message_html: html }));
+
+    expect(outcome).toMatchObject({ kind: 'processed', link: 'https://t.me/goodchannel/7' });
+    expect(sent).toEqual([{ chatId: -1002, messageId: 7, count: 1 }]);
+    expect(repository.findByPostId(150)?.status).toBe('commented');
+    expect(repository.findByPostId(150)?.tgLink).toBe('https://t.me/goodchannel/7');
+    expect(confirmationCount(forum.createdBodies)).toBe(1);
+    expect(adCount(forum.createdBodies)).toBe(1);
+  });
+
+  it('stars only the first valid link and notes the extra links', async () => {
+    const config = makeConfig();
+    const { service, sent, forum } = setup({
+      config,
+      resolvePostMap: {
+        'https://t.me/alpha/1': { chatId: -2001, messageId: 1 },
+        'https://t.me/beta/2': { chatId: -2002, messageId: 2 },
+      },
+    });
+
+    const html = '<a href="https://t.me/alpha/1">a</a> <a href="https://t.me/beta/2">b</a>';
+    const outcome = await service.process(makePost({ post_id: 151, message_html: html }));
+
+    expect(outcome).toMatchObject({ kind: 'processed', link: 'https://t.me/alpha/1' });
+    expect(sent).toEqual([{ chatId: -2001, messageId: 1, count: 1 }]);
+    expect(forum.createdBodies[0]).toContain(config.comment.multipleLinksText);
+  });
+
+  it('notices paid_reactions_disabled when every candidate has stars disabled', async () => {
+    const { service, telegram, repository, forum } = setup({
+      resolvePostMap: { 'https://t.me/alpha/1': { chatId: -1, messageId: 1 } },
+      resolveLatestMap: { bravo: { chatId: -2, messageId: 2 } },
+      paidDisabledChats: [-1, -2],
+    });
+
+    const html = '<a href="https://t.me/alpha/1">a</a> <a href="https://t.me/bravo">b</a>';
+    const outcome = await service.process(makePost({ post_id: 152, message_html: html }));
+
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'paid_reactions_disabled' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(forum.createdBodies).toHaveLength(2);
+    expect(repository.findByPostId(152)?.skipReason).toBe('paid_reactions_disabled');
+  });
+
+  it('reports the first failure reason when no candidate is usable', async () => {
+    const { service, telegram, repository } = setup({
+      resolveLatestMap: { empty: null },
+      resolvePostMap: { 'https://t.me/xray/1': null },
+    });
+
+    const html = '<a href="https://t.me/empty">e</a> <a href="https://t.me/xray/1">x</a>';
+    const outcome = await service.process(makePost({ post_id: 153, message_html: html }));
+
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'no_posts_found' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(repository.findByPostId(153)?.skipReason).toBe('no_posts_found');
   });
 });

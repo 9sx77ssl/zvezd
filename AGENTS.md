@@ -124,6 +124,13 @@ Data model (`src/db/Database.ts`):
   parks every request. Don't add token refresh anywhere else.
 - Link parsing works on raw `message_html`, so links inside revealed "hidden content"
   (`bbCodeHide`) blocks are found; only genuinely link-less posts trigger the notice.
+- A post may contain several links. `selectLinkCandidates` (link-parser) returns them
+  in order of appearance (non-TG hosts like YouTube are ignored, a bare channel link
+  is dropped when the same channel also has a post link). `IssuanceService.pickTarget`
+  then resolves them in order and stars the **first** one that is resolvable and
+  accepts paid reactions; the reason for the first failing candidate becomes the notice
+  when none works. With several **distinct channels** it still stars only one and
+  appends `comment.multipleLinksText` to the confirmation.
 - Comments are deduped by exact body (`findOwnCommentByBody`, visible only) and stars
   are idempotent via `tg_baseline`, so retries after a partial failure never double-post.
 - `config.yml` and `.env.example` comments are Russian; schema JSDoc stays English.

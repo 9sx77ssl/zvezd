@@ -69,6 +69,10 @@ export const fileConfigSchema = z.object({
       linkUnresolvableText: z
         .string()
         .default('не смог открыть ссылку, проверьте её и скиньте ещё раз!'),
+      /** Appended to the confirmation when the post had several channel links. */
+      multipleLinksText: z
+        .string()
+        .default('в посте несколько ссылок, звезда поставлена только за одну — присылайте одну!'),
       ad: z
         .object({
           enabled: z.boolean().default(true),
