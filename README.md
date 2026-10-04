@@ -152,7 +152,36 @@ bun run dev       # запуск с авто-перезагрузкой при �
 
 ## Деплой на сервер (pm2)
 
-На сервере (Linux) должны стоять `bun` и `pm2`.
+### Подготовка сервера: Bun + PM2
+
+Если сервер чистый (Ubuntu/Debian, работаем от root):
+
+```bash
+# --- Bun ---
+curl -fsSL https://bun.sh/install | bash
+exec -l "$SHELL"          # перечитать PATH (или выйти/зайти заново)
+bun --version             # должно быть >= 1.4
+
+# --- PM2 (глобально) ---
+bun add -g pm2            # или: npm i -g pm2
+pm2 -v
+
+# --- автозапуск бота после перезагрузки сервера (один раз) ---
+pm2 startup systemd       # покажет команду — выполни её от root
+pm2 save                  # сохранить текущий список процессов
+```
+
+Если `bun` не находится в новом шелле, добавь в `~/.bashrc` (или `~/.zshrc`):
+
+```bash
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+```
+
+PM2-конфиг сам ищет `bun` (сначала `BUN_PATH`, затем `/usr/local/bin/bun`,
+`/root/.bun/bin/bun`, затем PATH) — обычно ничего указывать не нужно.
+
+### Установка и запуск
 
 ```bash
 # 1. код
@@ -183,12 +212,14 @@ pm2 startOrRestart ecosystem.config.cjs   # перечитывает конфи�
 Проверка статуса:
 
 ```bash
-pm2 describe zvezd
+pm2 describe zvezd        # status = online, restarts
+pm2 logs zvezd --lines 50 # хвост логов
+pm2 monit                 # живой монитор CPU/RAM
 ```
 
-PM2-конфиг (`ecosystem.config.cjs`) сам находит `bun` (или берёт путь из
-`BUN_PATH`), пишет логи в `/root/.pm2/logs/zvezd-out.log` и перезапускает бота при
-падении.
+PM2-конфиг (`ecosystem.config.cjs`) пишет логи в `/root/.pm2/logs/zvezd-out.log`
+и `/root/.pm2/logs/zvezd-error.log`, перезапускает бота при падении и следит за
+памятью (`max_memory_restart: 400M`).
 
 > **`bun run login` лучше сделать на сервере** (он интерактивный). Либо залогинься
 > локально и перенеси файл `telegram.sessionPath` на сервер. Сессия привязана к
