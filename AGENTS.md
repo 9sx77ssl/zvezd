@@ -131,6 +131,11 @@ Data model (`src/db/Database.ts`):
   accepts paid reactions; the reason for the first failing candidate becomes the notice
   when none works. With several **distinct channels** it still stars only one and
   appends `comment.multipleLinksText` to the confirmation.
+- Unfinished posts are retried on an interval (`polling.retryPendingIntervalMs`), not
+  only at startup, because the poll walk stops at the first inactive page. Both
+  `resolvePost` and `resolveLatestPost` map permanent RPC errors (`CHANNEL_PRIVATE`,
+  `USERNAME_INVALID`, ...) to `null` = a failed candidate, so a broken link never
+  loops forever as a retryable failure.
 - Comments are deduped by exact body (`findOwnCommentByBody`, visible only) and stars
   are idempotent via `tg_baseline`, so retries after a partial failure never double-post.
 - `config.yml` and `.env.example` comments are Russian; schema JSDoc stays English.

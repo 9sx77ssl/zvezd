@@ -49,6 +49,11 @@ function isPermanentRpcError(err: unknown): boolean {
   );
 }
 
+/** Whether an RPC error means the link's chat/post can never be resolved. */
+export function isPermanentResolveError(err: unknown): boolean {
+  return err instanceof tl.RpcError && PERMANENT_RESOLVE_ERRORS.has(err.text);
+}
+
 /**
  * Wraps mtcute's user client. The session is persisted in SQLite at
  * `sessionPath`, so after a single interactive `bun run login` the bot runs
@@ -122,8 +127,11 @@ export class TelegramService {
         if (!message) return null;
         return { chatId: message.chat.id, messageId: message.id, message };
       } catch (err) {
-        if (err instanceof tl.RpcError && PERMANENT_RESOLVE_ERRORS.has(err.text)) {
-          this.logger.warn('Telegram post cannot be resolved', { link, rpc: err.text });
+        if (isPermanentResolveError(err)) {
+          this.logger.warn('Telegram post cannot be resolved', {
+            link,
+            rpc: (err as tl.RpcError).text,
+          });
           return null;
         }
         throw err;
@@ -142,15 +150,26 @@ export class TelegramService {
 
   /**
    * Resolve a bare channel link to its latest non-service post.
-   * Returns `null` when the channel has no posts.
+   * Returns `null` when the channel has no posts or can never be resolved.
    */
   resolveLatestPost(username: string): Promise<{ chatId: number; messageId: number } | null> {
     return this.withRetry('resolveLatestPost', async () => {
-      const peer = await this.client!.resolvePeer(username);
-      const history = await this.client!.getHistory(peer, { limit: 5 });
-      const message = history.find((item) => !item.isService) ?? null;
-      if (!message) return null;
-      return { chatId: message.chat.id, messageId: message.id };
+      try {
+        const peer = await this.client!.resolvePeer(username);
+        const history = await this.client!.getHistory(peer, { limit: 20 });
+        const message = history.find((item) => !item.isService) ?? null;
+        if (!message) return null;
+        return { chatId: message.chat.id, messageId: message.id };
+      } catch (err) {
+        if (isPermanentResolveError(err)) {
+          this.logger.warn('Channel link cannot be resolved', {
+            username,
+            rpc: (err as tl.RpcError).text,
+          });
+          return null;
+        }
+        throw err;
+      }
     });
   }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { AppConfig } from '../src/config';
 import { Database } from '../src/db/Database';
 import { IssuanceRepository } from '../src/db/repositories/IssuanceRepository';
 import { StateRepository } from '../src/db/repositories/StateRepository';
@@ -12,9 +13,11 @@ type OutcomeKind = 'processed' | 'already' | 'ignored';
 
 interface SetupOptions {
   completed?: boolean;
+  config?: AppConfig;
   outcomeFor?: (post: ForumPost, page: number) => OutcomeKind;
   stopOnEmptyPage?: boolean;
   pageOfPost?: Record<number, ForumPost[]>;
+  onPageOfPost?: () => void;
   getBalance?: () => Promise<number>;
 }
 
@@ -33,6 +36,7 @@ function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
     getPosts: async (params: { page?: number; pageOfPostId?: number }) => {
       if (params.pageOfPostId !== undefined) {
         requestedPageOfPost.push(params.pageOfPostId);
+        options.onPageOfPost?.();
         return {
           posts: options.pageOfPost?.[params.pageOfPostId] ?? [],
           posts_total: 99,
@@ -67,7 +71,7 @@ function setup(pages: Record<number, ForumPost[]>, options: SetupOptions = {}) {
   };
 
   scanner = new ScannerService({
-    config: makeConfig(),
+    config: options.config ?? makeConfig(),
     forum: forum as unknown as ForumClient,
     issuance: issuance as unknown as IssuanceService,
     repository,
@@ -180,6 +184,38 @@ describe('ScannerService page walking', () => {
 
     expect(requestedPageOfPost).toEqual([999]);
     expect(processed).toEqual([999]);
+  });
+
+  it('retries unfinished posts periodically, not only on startup', async () => {
+    const config = makeConfig();
+    config.polling = { ...config.polling, intervalMs: 1, retryPendingIntervalMs: 1 };
+
+    let retries = 0;
+    const { scanner, repository, requestedPageOfPost } = setup(
+      { 1: [] },
+      {
+        config,
+        completed: true,
+        pageOfPost: { 999: [p(999)] },
+        outcomeFor: () => 'already',
+        onPageOfPost: () => {
+          retries += 1;
+          if (retries >= 2) scanner.stop();
+        },
+      },
+    );
+
+    repository.reserve({
+      threadId: 1,
+      postId: 999,
+      posterUserId: 1,
+      posterUsername: 'deep',
+      tgLink: null,
+    });
+
+    await scanner.start();
+
+    expect(requestedPageOfPost.length).toBeGreaterThanOrEqual(2);
   });
 
   it('re-reads the real balance on every check', async () => {

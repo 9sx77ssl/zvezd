@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeStarsAmount } from '../src/telegram/TelegramService';
+import { tl } from '@mtcute/bun';
+import { isPermanentResolveError, normalizeStarsAmount } from '../src/telegram/TelegramService';
+
+describe('isPermanentResolveError', () => {
+  it('flags links that can never be resolved', () => {
+    expect(isPermanentResolveError(new tl.RpcError(400, 'USERNAME_INVALID'))).toBe(true);
+    expect(isPermanentResolveError(new tl.RpcError(400, 'CHANNEL_PRIVATE'))).toBe(true);
+    expect(isPermanentResolveError(new tl.RpcError(400, 'MESSAGE_ID_INVALID'))).toBe(true);
+  });
+
+  it('leaves transient errors and non-RPC errors retryable', () => {
+    expect(isPermanentResolveError(new tl.RpcError(420, 'FLOOD_WAIT'))).toBe(false);
+    expect(isPermanentResolveError(new Error('network'))).toBe(false);
+  });
+});
 
 describe('normalizeStarsAmount', () => {
   it('adds the nanos for starsAmount', () => {

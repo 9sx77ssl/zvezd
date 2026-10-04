@@ -19,6 +19,8 @@ export const fileConfigSchema = z.object({
       pageLimit: z.number().int().min(1).max(20).default(20),
       /** Pause between page fetches while walking the backlog. */
       pageDelayMs: z.number().int().min(0).default(5_000),
+      /** How often to retry unfinished posts, 0 = only on startup. */
+      retryPendingIntervalMs: z.number().int().min(0).default(600_000),
       /** Safety cap for the backlog walk, 0 = unlimited. */
       maxBackfillPages: z.number().int().min(0).default(0),
     })

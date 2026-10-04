@@ -46,6 +46,7 @@ export class ScannerService {
   private running = false;
   private readonly abort = new AbortController();
   private pollCount = 0;
+  private lastRetryAt = 0;
   private balance: number | null = null;
 
   constructor(deps: ScannerServiceDeps) {
@@ -75,6 +76,7 @@ export class ScannerService {
     }
 
     await this.retryPending();
+    this.lastRetryAt = Date.now();
 
     await this.pollLoop();
   }
@@ -178,6 +180,14 @@ export class ScannerService {
     while (this.running) {
       const startedAt = Date.now();
       try {
+        // Unfinished posts on older pages are not reached by the page walk
+        // (it stops at the first inactive page), so retry them on an interval.
+        if (this.isRetryPendingDue(startedAt)) {
+          this.lastRetryAt = startedAt;
+          await this.retryPending();
+          if (!this.running) break;
+        }
+
         const outcomes = await this.walkPages(false, 'poll');
         if (!this.running) break;
 
@@ -196,6 +206,11 @@ export class ScannerService {
       const elapsed = Date.now() - startedAt;
       await this.interruptibleSleep(Math.max(0, interval - elapsed));
     }
+  }
+
+  private isRetryPendingDue(now: number): boolean {
+    const interval = this.config.polling.retryPendingIntervalMs;
+    return interval > 0 && now - this.lastRetryAt >= interval;
   }
 
   /**

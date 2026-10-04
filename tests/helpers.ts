@@ -18,6 +18,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       intervalMs: 1_000,
       pageLimit: 20,
       pageDelayMs: 0,
+      retryPendingIntervalMs: 600_000,
       maxBackfillPages: 0,
     },
     pacing: { cooldownMs: 0, starVerifyDelayMs: 0, commentVerifyDelayMs: 0 },
