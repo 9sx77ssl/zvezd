@@ -189,17 +189,15 @@ pm2 -v
 
 ```bash
 cd /root
-git clone git@github.com:9sx77ssl/zvezd.git zvezd
+git clone https://github.com/9sx77ssl/zvezd.git zvezd
 cd zvezd
 ```
 
-Если нет SSH-ключа к GitHub — клонируй по HTTPS:
+Если предпочитаешь SSH:
 
 ```bash
-git clone https://github.com/9sx77ssl/zvezd.git zvezd
+git clone git@github.com:9sx77ssl/zvezd.git zvezd
 ```
-
-> Репозиторий приватный — нужен доступ (SSH-ключ или токен). Попроси его выдать.
 
 ### 4. Установить зависимости
 
