@@ -57,6 +57,26 @@ describe('link-parser', () => {
     expect(selectFirstTgPostLink(html)?.url).toBe('https://t.me/xenophe_lolz/5');
   });
 
+  it('extracts the link from a revealed "hidden content" (bbCodeHide) block', () => {
+    // Real shape: the link is inside the hide block, next to lolz.team profile
+    // links that must not be picked up.
+    const html =
+      '<div class="bbCodeBlock bbCodeQuote bbCodeHide"><aside>' +
+      '<div class="attribution type">Скрытый контент для <a href="https://lolz.team/gay1234/" class="username">yolo</a>.</div>' +
+      '<blockquote class="quoteContainer hideContainer"><div class="quote">' +
+      '<a href="https://lolz.team/members/9252369/" class="username mention">yolo</a>,  ' +
+      '<a href="https://t.me/baoldgold/4" rel="nofollow" class="externalLink" target="_blank">https://t.me/baoldgold/4</a>' +
+      '</div><div class="quoteExpand">Нажмите, чтобы раскрыть...</div></blockquote>' +
+      '</aside></div>';
+
+    expect(selectFirstTgLink(html)).toEqual({
+      kind: 'post',
+      url: 'https://t.me/baoldgold/4',
+      username: 'baoldgold',
+      messageId: 4,
+    });
+  });
+
   it('returns null when there is no link', () => {
     expect(selectFirstTgPostLink('<div>no links here</div>')).toBeNull();
     expect(extractTgPostLinks('[MEDIA]')).toEqual([]);
