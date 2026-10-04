@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { AppConfig } from '../src/config';
 import { DEFAULT_AD_TEMPLATE } from '../src/config/defaults';
+import { Cooldown } from '../src/core/async';
 import { PaidReactionsDisabledError } from '../src/core/errors';
 import { Database } from '../src/db/Database';
 import { IssuanceRepository } from '../src/db/repositories/IssuanceRepository';
@@ -135,6 +136,7 @@ function setup(options: SetupOptions = {}) {
     repository,
     logger: testLogger,
     selfForumUserId: 1,
+    cooldown: new Cooldown(0),
   });
 
   return { db, repository, telegram, forum, service };
@@ -180,16 +182,24 @@ describe('IssuanceService', () => {
     expect(repository.findByPostId(101)?.skipReason).toBe('comments_present');
   });
 
-  it('ignores posts without a Telegram link (re-checked on next poll)', async () => {
-    const { service, telegram, repository } = setup();
+  it('notices the user when the post has no Telegram link', async () => {
+    const config = makeConfig();
+    const { service, telegram, repository, forum } = setup({ config });
 
     const outcome = await service.process(
       makePost({ post_id: 102, message_html: '<div>nope</div>' }),
     );
 
-    expect(outcome).toMatchObject({ kind: 'ignored', reason: 'no_tg_link' });
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'no_link_found' });
     expect(telegram.sendCalls).toBe(0);
-    expect(repository.findByPostId(102)).toBeNull();
+    expect(repository.findByPostId(102)?.status).toBe('skipped');
+    expect(repository.findByPostId(102)?.skipReason).toBe('no_link_found');
+
+    // Same unified notice path as the other checks: one message + the ad.
+    expect(confirmationCount(forum.createdBodies)).toBe(1);
+    expect(adCount(forum.createdBodies)).toBe(1);
+    expect(forum.createdBodies[0]).toContain(config.comment.noLinkFoundText);
+    expect(forum.createdBodies[0]).toContain('intimacy');
   });
 
   it('ignores the first post and its own posts', async () => {

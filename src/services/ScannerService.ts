@@ -235,7 +235,6 @@ export class ScannerService {
           if (outcome.kind === 'processed' && outcome.balance !== undefined) {
             this.balance = outcome.balance;
           }
-          await this.interruptibleSleep(this.config.polling.postDelayMs);
         }
       } catch (err) {
         attempted.add(record.postId);
@@ -319,12 +318,6 @@ export class ScannerService {
       outcomes.push(outcome);
       if (outcome.kind === 'processed' && outcome.balance !== undefined) {
         this.balance = outcome.balance;
-      }
-
-      const actionable =
-        outcome.kind === 'processed' || outcome.kind === 'failed' || outcome.kind === 'skipped';
-      if (actionable && this.config.polling.postDelayMs > 0) {
-        await this.interruptibleSleep(this.config.polling.postDelayMs);
       }
     }
     return outcomes;

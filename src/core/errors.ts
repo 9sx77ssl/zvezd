@@ -63,17 +63,60 @@ export class PermanentError extends AppError {
   }
 }
 
+/**
+ * Key of the message shown to the user for a {@link NoticeError}. The mapping
+ * to the actual text lives in `IssuanceService`; keeping the key here (instead
+ * of the resolved string) keeps the error layer free of config access.
+ */
+export type NoticeTextKey = 'paidReactionsDisabled' | 'noPostsFound' | 'noLinkFound';
+
+/**
+ * Base class for "tell the user and close the submission" conditions. Such a
+ * submission gets the notice comment plus the ad and is terminated as
+ * `skipped` with `reason`, exactly like every other notice — adding a new rule
+ * only needs a subclass, a `comment.*` text and one line in the text map.
+ */
+export class NoticeError extends AppError {
+  readonly reason: string;
+  readonly textKey: NoticeTextKey;
+
+  constructor(
+    message: string,
+    code: string,
+    reason: string,
+    textKey: NoticeTextKey,
+    options?: ErrorOptions,
+  ) {
+    super(message, code, options);
+    this.reason = reason;
+    this.textKey = textKey;
+  }
+}
+
 /** The target channel has paid (star) reactions disabled. */
-export class PaidReactionsDisabledError extends AppError {
+export class PaidReactionsDisabledError extends NoticeError {
   constructor(message: string, options?: ErrorOptions) {
-    super(message, 'PAID_REACTIONS_DISABLED', options);
+    super(
+      message,
+      'PAID_REACTIONS_DISABLED',
+      'paid_reactions_disabled',
+      'paidReactionsDisabled',
+      options,
+    );
   }
 }
 
 /** A bare channel link was submitted but the channel has no posts. */
-export class NoPostsFoundError extends AppError {
+export class NoPostsFoundError extends NoticeError {
   constructor(message: string, options?: ErrorOptions) {
-    super(message, 'NO_POSTS_FOUND', options);
+    super(message, 'NO_POSTS_FOUND', 'no_posts_found', 'noPostsFound', options);
+  }
+}
+
+/** The post contains no valid public Telegram link at all. */
+export class NoLinkFoundError extends NoticeError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'NO_LINK_FOUND', 'no_link_found', 'noLinkFound', options);
   }
 }
 

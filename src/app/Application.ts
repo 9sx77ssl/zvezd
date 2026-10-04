@@ -1,5 +1,6 @@
 import type { AppConfig } from '../config';
 import { readEnvToken } from '../config/env-file';
+import { Cooldown } from '../core/async';
 import type { Logger } from '../core/logger';
 import { Database } from '../db/Database';
 import { IssuanceRepository } from '../db/repositories/IssuanceRepository';
@@ -21,6 +22,7 @@ interface ApplicationDeps {
   forum: ForumClient;
   authGate: AuthGate;
   telegram: TelegramService;
+  cooldown: Cooldown;
   selfForumUserId: number;
 }
 
@@ -50,6 +52,7 @@ export class Application {
       repository: deps.repository,
       logger: deps.logger,
       selfForumUserId: deps.selfForumUserId,
+      cooldown: deps.cooldown,
     });
 
     this.scanner = new ScannerService({
@@ -76,6 +79,10 @@ export class Application {
     const repository = new IssuanceRepository(database);
     const state = new StateRepository(database);
 
+    // One gate shared by every outbound action (forum writes in ForumClient,
+    // Telegram sends in IssuanceService), so nothing bunches up.
+    const cooldown = new Cooldown(config.pacing.cooldownMs);
+
     const forum = new ForumClient({
       baseUrl: config.forum.baseUrl,
       token: config.forum.token,
@@ -84,6 +91,7 @@ export class Application {
       logger,
       readLimiter: rateLimiterFromPerMinute(config.rateLimit.readPerMinute, 'read'),
       writeLimiter: rateLimiterFromPerMinute(config.rateLimit.writePerMinute, 'write'),
+      cooldown,
     });
 
     const telegram = new TelegramService({
@@ -128,6 +136,7 @@ export class Application {
         forum,
         authGate,
         telegram,
+        cooldown,
         selfForumUserId: me.user.user_id,
       });
     } catch (err) {

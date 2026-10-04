@@ -21,18 +21,15 @@ polling:
   pageLimit: 20
   # Pause (ms) between page fetches while walking the backlog.
   pageDelayMs: 5000
-  # Pause (ms) after each handled post before moving to the next one.
-  postDelayMs: 5000
   # Safety cap for the backlog walk, 0 = unlimited.
   maxBackfillPages: 0
   # Page that carries the newest posts.
   idlePage: 1
 
 pacing:
-  # Wait (ms) between sending a star and writing the confirmation comment.
-  starToCommentMs: 5000
-  # Wait (ms) between the confirmation comment and the ad comment.
-  commentToAdMs: 5000
+  # One shared minimum pause (ms) between any two outgoing actions:
+  # star reaction, confirmation comment, ad comment, stats edits.
+  cooldownMs: 6000
   # Wait (ms) before verifying a star reaction whose send threw.
   starVerifyDelayMs: 2000
   # Wait (ms) before verifying a comment that errored (forum can be slow).
@@ -58,6 +55,8 @@ comment:
   paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!'
   # Sent when a bare channel link is submitted but the channel has no posts.
   noPostsFoundText: 'не нашёл пост в канале, скиньте ссылку на конкретный пост!'
+  # Sent when the post contains no valid public Telegram link at all.
+  noLinkFoundText: 'не нашёл ссылку в посте, скиньте ссылку на канал или конкретный пост!'
   # Second comment under every post — an advertisement. Fully configurable.
   ad:
     enabled: true

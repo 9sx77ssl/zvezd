@@ -1,8 +1,11 @@
 import type { AppConfig } from '../config';
-import { sleep } from '../core/async';
+import { type ActionGate, sleep } from '../core/async';
 import {
   ForumApiError,
+  NoLinkFoundError,
   NoPostsFoundError,
+  NoticeError,
+  type NoticeTextKey,
   PaidReactionsDisabledError,
   PermanentError,
 } from '../core/errors';
@@ -37,6 +40,8 @@ export interface IssuanceServiceDeps {
   repository: IssuanceRepository;
   logger: Logger;
   selfForumUserId: number;
+  /** Shared pacing gate between outgoing actions (star, comments). */
+  cooldown: ActionGate;
 }
 
 /**
@@ -63,6 +68,7 @@ export class IssuanceService {
   private readonly repository: IssuanceRepository;
   private readonly logger: Logger;
   private readonly selfForumUserId: number;
+  private readonly cooldown: ActionGate;
   private readonly dryRunReported = new Set<number>();
 
   constructor(deps: IssuanceServiceDeps) {
@@ -72,6 +78,7 @@ export class IssuanceService {
     this.repository = deps.repository;
     this.logger = deps.logger.child('Issuance');
     this.selfForumUserId = deps.selfForumUserId;
+    this.cooldown = deps.cooldown;
   }
 
   async process(post: ForumPost): Promise<IssuanceOutcome> {
@@ -88,15 +95,9 @@ export class IssuanceService {
     }
 
     const link = selectFirstTgLink(post.message_html);
-    if (!link) {
-      // Not persisted: users sometimes edit a post to add the link, so we
-      // simply re-check it on the next poll.
-      log.debug('Post has no Telegram link yet');
-      return { kind: 'ignored', postId, reason: 'no_tg_link' };
-    }
 
     if (this.config.star.dryRun) {
-      if (!this.dryRunReported.has(postId)) {
+      if (link && !this.dryRunReported.has(postId)) {
         this.dryRunReported.add(postId);
         log.info('Dry run: would issue star', {
           link: link.url,
@@ -112,7 +113,7 @@ export class IssuanceService {
       postId,
       posterUserId: post.user_id,
       posterUsername: post.username,
-      tgLink: link.url,
+      tgLink: link?.url ?? null,
     });
     const record = this.repository.findByPostId(postId);
     if (!record) return { kind: 'failed', postId, retryable: true, error: 'reservation_lost' };
@@ -149,23 +150,24 @@ export class IssuanceService {
 
     this.repository.bumpAttempts(postId);
 
+    // A missing link is just another user-facing notice: keeping the check
+    // inside the try routes it through the same notice + ad + terminal-skip
+    // path as paid reactions and empty channels.
+    const noticeLink = link?.url ?? '';
+
     try {
+      if (!link) throw new NoLinkFoundError(`Post has no Telegram link: ${postId}`);
+
       let balance: number | undefined;
 
       const needsStar = record.status !== 'star_sent' && record.status !== 'confirmed';
       if (needsStar) {
         balance = await this.issueStar(post, link, log, record);
-        if (this.config.pacing.starToCommentMs > 0) {
-          await sleep(this.config.pacing.starToCommentMs);
-        }
       }
 
       let commentId: number | null = record.commentId;
       if (record.status !== 'confirmed') {
         commentId = await this.writeConfirmation(post, link.url, log);
-        if (this.config.pacing.commentToAdMs > 0) {
-          await sleep(this.config.pacing.commentToAdMs);
-        }
       }
 
       const adCommentId = await this.writeAd(post, link.url, log);
@@ -180,23 +182,8 @@ export class IssuanceService {
         balance,
       };
     } catch (err) {
-      if (err instanceof PaidReactionsDisabledError) {
-        return this.handleNotice(
-          post,
-          link.url,
-          log,
-          this.config.comment.paidReactionsDisabledText,
-          'paid_reactions_disabled',
-        );
-      }
-      if (err instanceof NoPostsFoundError) {
-        return this.handleNotice(
-          post,
-          link.url,
-          log,
-          this.config.comment.noPostsFoundText,
-          'no_posts_found',
-        );
+      if (err instanceof NoticeError) {
+        return this.handleNotice(post, noticeLink, log, this.noticeText(err.textKey), err.reason);
       }
 
       const permanent = this.isPermanent(err);
@@ -268,6 +255,7 @@ export class IssuanceService {
     });
 
     try {
+      await this.cooldown.wait();
       const result = await this.telegram.sendStarReaction(
         target.chatId,
         target.messageId,
@@ -369,9 +357,6 @@ export class IssuanceService {
       const noticeBody = this.renderBody(this.config.comment.template, post, link, text);
       const existing = await this.findOwnCommentByBody(postId, noticeBody);
       commentId = existing ?? (await this.postComment(post, noticeBody, log, 'notice'));
-      if (this.config.pacing.commentToAdMs > 0) {
-        await sleep(this.config.pacing.commentToAdMs);
-      }
     }
 
     let adCommentId: number | null = null;
@@ -385,6 +370,18 @@ export class IssuanceService {
     log.warn('Notified the user and posted the ad', { link, reason, commentId, adCommentId });
 
     return { kind: 'skipped', postId, reason };
+  }
+
+  /** Resolve the configured user-facing message for a notice. */
+  private noticeText(key: NoticeTextKey): string {
+    switch (key) {
+      case 'paidReactionsDisabled':
+        return this.config.comment.paidReactionsDisabledText;
+      case 'noPostsFound':
+        return this.config.comment.noPostsFoundText;
+      case 'noLinkFound':
+        return this.config.comment.noLinkFoundText;
+    }
   }
 
   private async writeConfirmation(

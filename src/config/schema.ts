@@ -19,8 +19,6 @@ export const fileConfigSchema = z.object({
       pageLimit: z.number().int().min(1).max(20).default(20),
       /** Pause between page fetches while walking the backlog. */
       pageDelayMs: z.number().int().min(0).default(5_000),
-      /** Pause after each handled post before moving to the next one. */
-      postDelayMs: z.number().int().min(0).default(5_000),
       /** Safety cap for the backlog walk, 0 = unlimited. */
       maxBackfillPages: z.number().int().min(0).default(0),
       /** Page that carries the newest posts. */
@@ -29,10 +27,11 @@ export const fileConfigSchema = z.object({
     .prefault({}),
   pacing: z
     .object({
-      /** Pause between sending a star and writing the confirmation comment. */
-      starToCommentMs: z.number().int().min(0).default(5_000),
-      /** Pause between the confirmation comment and the ad comment. */
-      commentToAdMs: z.number().int().min(0).default(5_000),
+      /**
+       * Shared minimum pause between any two outgoing actions (star, comments,
+       * stats edits). One knob for the whole bot.
+       */
+      cooldownMs: z.number().int().min(0).default(6_000),
       /** Wait before verifying a star reaction whose send threw. */
       starVerifyDelayMs: z.number().int().min(0).default(2_000),
       /** Wait before verifying a comment that errored (slow forum responses). */
@@ -64,6 +63,10 @@ export const fileConfigSchema = z.object({
       noPostsFoundText: z
         .string()
         .default('не нашёл пост в канале, скиньте ссылку на конкретный пост!'),
+      /** Shown when the post contains no valid public Telegram link at all. */
+      noLinkFoundText: z
+        .string()
+        .default('не нашёл ссылку в посте, скиньте ссылку на канал или конкретный пост!'),
       ad: z
         .object({
           enabled: z.boolean().default(true),

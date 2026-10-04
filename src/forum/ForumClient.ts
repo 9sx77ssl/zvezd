@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { backoffDelay, sleep } from '../core/async';
+import { type ActionGate, backoffDelay, sleep } from '../core/async';
 import { ForumApiError, ForumRateLimitError, ShuttingDownError } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
 import type { AuthGate } from './AuthGate';
@@ -34,6 +34,8 @@ export interface ForumClientOptions {
   logger: Logger;
   readLimiter: RateLimiter;
   writeLimiter: RateLimiter;
+  /** Shared pacing gate applied before every write request. */
+  cooldown?: ActionGate;
 }
 
 export interface GetPostsParams {
@@ -66,6 +68,7 @@ export class ForumClient {
   private readonly logger: Logger;
   private readonly readLimiter: RateLimiter;
   private readonly writeLimiter: RateLimiter;
+  private readonly cooldown?: ActionGate;
   private authGate?: AuthGate;
 
   lastRateLimit?: ServerRateLimit;
@@ -78,6 +81,7 @@ export class ForumClient {
     this.logger = options.logger;
     this.readLimiter = options.readLimiter;
     this.writeLimiter = options.writeLimiter;
+    this.cooldown = options.cooldown;
   }
 
   /** Gate that parks requests while the forum rejects the token (401). */
@@ -176,6 +180,7 @@ export class ForumClient {
 
     for (let attempt = 1; attempt <= this.retry.attempts; attempt++) {
       await limiter.acquire();
+      if (method !== 'GET') await this.cooldown?.wait();
       try {
         return await this.execute(method, path, options, schema);
       } catch (err) {
