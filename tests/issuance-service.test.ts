@@ -261,15 +261,18 @@ describe('IssuanceService', () => {
     expect(repository.findByPostId(107)?.status).toBe('commented');
   });
 
-  it('marks unresolvable links as permanent failures', async () => {
-    const { service, repository } = setup({ resolveNull: true });
+  it('notices the user when the link cannot be resolved', async () => {
+    const config = makeConfig();
+    const { service, repository, telegram, forum } = setup({ config, resolveNull: true });
 
-    const first = await service.process(makePost({ post_id: 108 }));
-    expect(first).toMatchObject({ kind: 'failed', retryable: false });
-    expect(repository.findByPostId(108)?.skipReason).toBe('permanent');
+    const outcome = await service.process(makePost({ post_id: 108 }));
 
-    const second = await service.process(makePost({ post_id: 108 }));
-    expect(second).toMatchObject({ kind: 'already', status: 'failed_permanent' });
+    expect(outcome).toMatchObject({ kind: 'skipped', reason: 'link_unresolvable' });
+    expect(telegram.sendCalls).toBe(0);
+    expect(repository.findByPostId(108)?.skipReason).toBe('link_unresolvable');
+    expect(confirmationCount(forum.createdBodies)).toBe(1);
+    expect(adCount(forum.createdBodies)).toBe(1);
+    expect(forum.createdBodies[0]).toContain(config.comment.linkUnresolvableText);
   });
 
   it('still posts the ad when confirmation comments are disabled', async () => {
@@ -452,7 +455,7 @@ describe('IssuanceService', () => {
 
   it('keeps waiting while the attempt cooldown has not elapsed', async () => {
     const config = makeConfig();
-    config.retry = { ...config.retry, cooldownMs: 3_600_000 };
+    config.retry = { ...config.retry, failedPostCooldownMs: 3_600_000 };
     const { service, repository } = setup({ config });
 
     repository.reserve({

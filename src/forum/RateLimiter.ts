@@ -21,17 +21,14 @@ export interface ServerRateLimit {
  * Builds a limiter from a human-friendly "requests per minute" value.
  * Keeps a safety reserve and never lets requests bunch up.
  */
-export function rateLimiterFromPerMinute(perMinute: number, name: string): RateLimiter {
+export function rateLimiterFromPerMinute(perMinute: number): RateLimiter {
   const rate = Math.max(1, Math.floor(perMinute));
-  return new RateLimiter(
-    {
-      capacity: rate,
-      refillPerMs: rate / 60_000,
-      minIntervalMs: Math.ceil(60_000 / rate),
-      reserve: Math.max(1, Math.ceil(rate * 0.06)),
-    },
-    name,
-  );
+  return new RateLimiter({
+    capacity: rate,
+    refillPerMs: rate / 60_000,
+    minIntervalMs: Math.ceil(60_000 / rate),
+    reserve: Math.max(1, Math.ceil(rate * 0.06)),
+  });
 }
 
 /**
@@ -46,10 +43,7 @@ export class RateLimiter {
   private blockedUntil = 0;
   private tail: Promise<void> = Promise.resolve();
 
-  constructor(
-    private readonly options: RateLimiterOptions,
-    private readonly name: string,
-  ) {
+  constructor(private readonly options: RateLimiterOptions) {
     this.tokens = options.capacity;
   }
 
@@ -118,10 +112,5 @@ export class RateLimiter {
       this.lastRequestAt = Date.now();
       return;
     }
-  }
-
-  /** Snapshot used for observability. */
-  state(): { name: string; tokens: number; blockedUntil: number } {
-    return { name: this.name, tokens: this.tokens, blockedUntil: this.blockedUntil };
   }
 }

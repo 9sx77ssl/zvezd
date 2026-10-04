@@ -1,12 +1,30 @@
 import { z } from 'zod';
 import { DEFAULT_AD_TEMPLATE } from './defaults';
 
+/** Parse common truthy/falsy env spellings; reject anything else loudly. */
+const booleanString = (name: string) =>
+  z
+    .string()
+    .optional()
+    .superRefine((value, ctx) => {
+      if (value === undefined) return;
+      const normalized = value.trim().toLowerCase();
+      if (!['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'].includes(normalized)) {
+        ctx.addIssue({ code: 'custom', message: `${name} must be a boolean (true/false)` });
+      }
+    })
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase()),
+    );
+
 /** Shape of `config.yml` before secrets are injected from the environment. */
 export const fileConfigSchema = z.object({
   forum: z.object({
     baseUrl: z.string().url().default('https://api.lolz.team'),
     threadId: z.number().int().positive(),
-    requestTimeoutMs: z.number().int().positive().default(15_000),
+    requestTimeoutMs: z.number().int().positive().default(30_000),
     order: z
       .enum(['natural', 'natural_reverse', 'post_likes', 'post_likes_reverse'])
       .default('natural_reverse'),
@@ -21,8 +39,6 @@ export const fileConfigSchema = z.object({
       pageDelayMs: z.number().int().min(0).default(5_000),
       /** Safety cap for the backlog walk, 0 = unlimited. */
       maxBackfillPages: z.number().int().min(0).default(0),
-      /** Page that carries the newest posts. */
-      idlePage: z.number().int().positive().default(1),
     })
     .prefault({}),
   pacing: z
@@ -67,6 +83,10 @@ export const fileConfigSchema = z.object({
       noLinkFoundText: z
         .string()
         .default('не нашёл ссылку в посте, скиньте ссылку на канал или конкретный пост!'),
+      /** Shown when the link exists but its Telegram message cannot be resolved. */
+      linkUnresolvableText: z
+        .string()
+        .default('не смог открыть ссылку, проверьте её и скиньте ещё раз!'),
       ad: z
         .object({
           enabled: z.boolean().default(true),
@@ -93,7 +113,7 @@ export const fileConfigSchema = z.object({
       /** Ceiling for retry delays. */
       maxDelayMs: z.number().int().positive().default(30_000),
       /** How long to wait before retrying a post that exhausted its attempts. */
-      cooldownMs: z.number().int().min(0).default(3_600_000),
+      failedPostCooldownMs: z.number().int().min(0).default(3_600_000),
     })
     .prefault({}),
   database: z
@@ -104,9 +124,9 @@ export const fileConfigSchema = z.object({
   auth: z
     .object({
       /** File holding FORUM_TOKEN; re-read while the forum rejects it. */
-      envPath: z.string().default('.env'),
+      tokenFile: z.string().default('.env'),
       /** How often to re-read the token file / probe the forum. */
-      checkIntervalMs: z.number().int().min(5_000).default(60_000),
+      tokenCheckIntervalMs: z.number().int().min(5_000).default(60_000),
       /** Repeat the "still waiting" log every N checks, 0 disables it. */
       logEveryChecks: z.number().int().min(0).default(10),
     })
@@ -149,16 +169,8 @@ export const envSchema = z.object({
   DB_PATH: z.string().optional(),
   TG_SESSION_PATH: z.string().optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).optional(),
-  LOG_PRETTY: z
-    .string()
-    .optional()
-    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  LOG_PRETTY: booleanString('LOG_PRETTY'),
   STAR_COUNT: z.coerce.number().int().positive().optional(),
   POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).optional(),
-  DRY_RUN: z
-    .string()
-    .optional()
-    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  DRY_RUN: booleanString('DRY_RUN'),
 });
-
-export type Env = z.infer<typeof envSchema>;

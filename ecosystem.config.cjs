@@ -1,12 +1,29 @@
 // PM2 process definition for the Lolz Star Bot.
 // Start with: pm2 start ecosystem.config.cjs
+
+const { execSync } = require('node:child_process');
+const { existsSync } = require('node:fs');
+
+// Resolve the bun binary instead of hardcoding a path: honour BUN_PATH, then
+// the common install locations, then PATH.
+function resolveBun() {
+  for (const candidate of [process.env.BUN_PATH, '/usr/local/bin/bun', '/root/.bun/bin/bun']) {
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  try {
+    return execSync('command -v bun', { encoding: 'utf8' }).trim();
+  } catch {
+    return 'bun';
+  }
+}
+
 module.exports = {
   apps: [
     {
       name: 'zvezd',
       cwd: __dirname,
       script: 'src/index.ts',
-      interpreter: '/usr/local/bin/bun',
+      interpreter: resolveBun(),
       autorestart: true,
       watch: false,
       max_memory_restart: '400M',

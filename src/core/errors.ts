@@ -5,6 +5,8 @@
  * decisions never rely on string matching of human messages.
  */
 
+import { NOTICES, type NoticeKind, type NoticeReason } from './vocab';
+
 export type ErrorOptions = { cause?: unknown };
 
 export class AppError extends Error {
@@ -64,59 +66,50 @@ export class PermanentError extends AppError {
 }
 
 /**
- * Key of the message shown to the user for a {@link NoticeError}. The mapping
- * to the actual text lives in `IssuanceService`; keeping the key here (instead
- * of the resolved string) keeps the error layer free of config access.
- */
-export type NoticeTextKey = 'paidReactionsDisabled' | 'noPostsFound' | 'noLinkFound';
-
-/**
  * Base class for "tell the user and close the submission" conditions. Such a
  * submission gets the notice comment plus the ad and is terminated as
- * `skipped` with `reason`, exactly like every other notice — adding a new rule
- * only needs a subclass, a `comment.*` text and one line in the text map.
+ * `skipped` with the reason from {@link NOTICES}.
+ *
+ * The error only carries the {@link NoticeKind}; its `code`, persisted `reason`
+ * and config text key all come from the single registry, so a new notice can
+ * never drift between those places.
  */
 export class NoticeError extends AppError {
-  readonly reason: string;
-  readonly textKey: NoticeTextKey;
+  readonly kind: NoticeKind;
+  readonly reason: NoticeReason;
 
-  constructor(
-    message: string,
-    code: string,
-    reason: string,
-    textKey: NoticeTextKey,
-    options?: ErrorOptions,
-  ) {
-    super(message, code, options);
-    this.reason = reason;
-    this.textKey = textKey;
+  constructor(message: string, kind: NoticeKind, options?: ErrorOptions) {
+    super(message, NOTICES[kind].code, options);
+    this.kind = kind;
+    this.reason = NOTICES[kind].reason;
   }
 }
 
 /** The target channel has paid (star) reactions disabled. */
 export class PaidReactionsDisabledError extends NoticeError {
   constructor(message: string, options?: ErrorOptions) {
-    super(
-      message,
-      'PAID_REACTIONS_DISABLED',
-      'paid_reactions_disabled',
-      'paidReactionsDisabled',
-      options,
-    );
+    super(message, 'paidReactionsDisabled', options);
   }
 }
 
 /** A bare channel link was submitted but the channel has no posts. */
 export class NoPostsFoundError extends NoticeError {
   constructor(message: string, options?: ErrorOptions) {
-    super(message, 'NO_POSTS_FOUND', 'no_posts_found', 'noPostsFound', options);
+    super(message, 'noPostsFound', options);
   }
 }
 
 /** The post contains no valid public Telegram link at all. */
 export class NoLinkFoundError extends NoticeError {
   constructor(message: string, options?: ErrorOptions) {
-    super(message, 'NO_LINK_FOUND', 'no_link_found', 'noLinkFound', options);
+    super(message, 'noLinkFound', options);
+  }
+}
+
+/** The Telegram link exists but the message behind it cannot be resolved. */
+export class LinkUnresolvableError extends NoticeError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 'linkUnresolvable', options);
   }
 }
 

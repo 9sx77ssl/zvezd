@@ -103,11 +103,6 @@ export class TelegramService {
     return this.self;
   }
 
-  get user(): User {
-    if (!this.self) throw new Error('TelegramService.init() was not awaited');
-    return this.self;
-  }
-
   /** Current Telegram Stars balance for the authorized account. */
   getBalance(): Promise<number> {
     return this.withRetry('getBalance', async () => {
@@ -233,7 +228,7 @@ export class TelegramService {
   }
 }
 
-function normalizeStarsAmount(amount: tl.TypeStarsAmount): number {
+export function normalizeStarsAmount(amount: tl.TypeStarsAmount): number {
   if ('amount' in amount) {
     const whole = Number(amount.amount);
     const nanos = amount._ === 'starsAmount' ? amount.nanos : 0;

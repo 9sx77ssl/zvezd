@@ -2,21 +2,33 @@ import type { AppConfig } from '../config';
 import { type ActionGate, sleep } from '../core/async';
 import {
   ForumApiError,
+  LinkUnresolvableError,
   NoLinkFoundError,
   NoPostsFoundError,
   NoticeError,
-  type NoticeTextKey,
   PaidReactionsDisabledError,
   PermanentError,
 } from '../core/errors';
 import { errorToLog, type Logger } from '../core/logger';
+import {
+  type IgnoreReason,
+  type IssuanceStatus,
+  NOTICES,
+  type NoticeKind,
+  type NoticeReason,
+  type SkipReason,
+} from '../core/vocab';
 import type { IssuanceRepository } from '../db/repositories/IssuanceRepository';
 import type { IssuanceRecord } from '../db/types';
 import type { ForumClient } from '../forum/ForumClient';
 import type { ForumPost } from '../forum/types';
+import { runPreChecks } from '../issuance/checks';
 import { selectFirstTgLink, type TgLink } from '../telegram/link-parser';
 import type { TelegramService } from '../telegram/TelegramService';
 import { renderComment } from './comment-renderer';
+
+/** Outcome-only statuses that are never persisted as such. */
+export type SyntheticStatus = 'failed_permanent' | 'attempts_exhausted';
 
 export type IssuanceOutcome =
   | {
@@ -28,9 +40,9 @@ export type IssuanceOutcome =
       adCommentId: number | null;
       balance?: number;
     }
-  | { kind: 'already'; postId: number; status: string }
-  | { kind: 'ignored'; postId: number; reason: string }
-  | { kind: 'skipped'; postId: number; reason: string }
+  | { kind: 'already'; postId: number; status: IssuanceStatus | SyntheticStatus }
+  | { kind: 'ignored'; postId: number; reason: IgnoreReason }
+  | { kind: 'skipped'; postId: number; reason: SkipReason | NoticeReason }
   | { kind: 'failed'; postId: number; retryable: boolean; error: string };
 
 export interface IssuanceServiceDeps {
@@ -84,17 +96,15 @@ export class IssuanceService {
   async process(post: ForumPost): Promise<IssuanceOutcome> {
     const postId = post.post_id;
     const log = this.logger.child('Post', { postId, username: post.username });
-
-    if (post.is_first_post) return { kind: 'ignored', postId, reason: 'first_post' };
-    if (post.message_state === 'deleted') return { kind: 'ignored', postId, reason: 'deleted' };
-    if (post.message_state !== 'visible') {
-      return { kind: 'ignored', postId, reason: 'unpublished' };
-    }
-    if (post.user_id === this.selfForumUserId) {
-      return { kind: 'ignored', postId, reason: 'own_post' };
-    }
-
     const link = selectFirstTgLink(post.message_html);
+    const ctx = { selfForumUserId: this.selfForumUserId, link };
+
+    // Silent pre-reservation checks (first post, deleted/hidden, own post).
+    const pre = runPreChecks(post, ctx);
+    if (pre) {
+      if (pre.kind === 'ignore') return { kind: 'ignored', postId, reason: pre.reason };
+      return { kind: 'skipped', postId, reason: pre.reason };
+    }
 
     if (this.config.star.dryRun) {
       if (link && !this.dryRunReported.has(postId)) {
@@ -126,7 +136,8 @@ export class IssuanceService {
         return { kind: 'already', postId, status: 'failed_permanent' };
       }
       if (record.attempts >= this.config.retry.attempts) {
-        const cooldownPassed = Date.now() - record.updatedAt >= this.config.retry.cooldownMs;
+        const cooldownPassed =
+          Date.now() - record.updatedAt >= this.config.retry.failedPostCooldownMs;
         if (!cooldownPassed) {
           return { kind: 'already', postId, status: 'attempts_exhausted' };
         }
@@ -150,9 +161,8 @@ export class IssuanceService {
 
     this.repository.bumpAttempts(postId);
 
-    // A missing link is just another user-facing notice: keeping the check
-    // inside the try routes it through the same notice + ad + terminal-skip
-    // path as paid reactions and empty channels.
+    // User-facing checks (missing link, ...) are evaluated after the claim so
+    // the notice can be persisted; they throw a NoticeError handled below.
     const noticeLink = link?.url ?? '';
 
     try {
@@ -183,7 +193,7 @@ export class IssuanceService {
       };
     } catch (err) {
       if (err instanceof NoticeError) {
-        return this.handleNotice(post, noticeLink, log, this.noticeText(err.textKey), err.reason);
+        return this.handleNotice(post, noticeLink, log, this.noticeText(err.kind), err.reason);
       }
 
       const permanent = this.isPermanent(err);
@@ -323,7 +333,8 @@ export class IssuanceService {
 
     if (link.kind === 'post') {
       const resolved = await this.telegram.resolvePost(link.url);
-      if (!resolved) throw new PermanentError(`Telegram post is not resolvable: ${link.url}`);
+      if (!resolved)
+        throw new LinkUnresolvableError(`Telegram post is not resolvable: ${link.url}`);
       this.repository.setTarget(post.post_id, String(resolved.chatId), resolved.messageId);
       return { chatId: resolved.chatId, messageId: resolved.messageId };
     }
@@ -348,7 +359,7 @@ export class IssuanceService {
     link: string,
     log: Logger,
     text: string,
-    reason: string,
+    reason: NoticeReason,
   ): Promise<IssuanceOutcome> {
     const postId = post.post_id;
     let commentId: number | null = null;
@@ -372,16 +383,9 @@ export class IssuanceService {
     return { kind: 'skipped', postId, reason };
   }
 
-  /** Resolve the configured user-facing message for a notice. */
-  private noticeText(key: NoticeTextKey): string {
-    switch (key) {
-      case 'paidReactionsDisabled':
-        return this.config.comment.paidReactionsDisabledText;
-      case 'noPostsFound':
-        return this.config.comment.noPostsFoundText;
-      case 'noLinkFound':
-        return this.config.comment.noLinkFoundText;
-    }
+  /** Resolve the configured user-facing message for a notice kind. */
+  private noticeText(kind: NoticeKind): string {
+    return this.config.comment[NOTICES[kind].text];
   }
 
   private async writeConfirmation(

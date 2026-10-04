@@ -1,10 +1,6 @@
-export type IssuanceStatus =
-  | 'pending'
-  | 'star_sent'
-  | 'confirmed'
-  | 'commented'
-  | 'skipped'
-  | 'failed';
+import type { IssuanceReason, IssuanceStatus } from '../core/vocab';
+
+export type { IssuanceStatus } from '../core/vocab';
 
 export interface IssuanceRecord {
   id: number;
@@ -18,7 +14,7 @@ export interface IssuanceRecord {
   /** Our paid-reaction count on the TG post before the first attempt for this forum post. */
   tgBaseline: number | null;
   status: IssuanceStatus;
-  skipReason: string | null;
+  skipReason: IssuanceReason | null;
   error: string | null;
   attempts: number;
   commentId: number | null;

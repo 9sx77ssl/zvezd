@@ -50,8 +50,8 @@ function makeClient(token = 'dead-token'): ForumClient {
     timeoutMs: 1_000,
     retry: { attempts: 3, delayMs: 1, maxDelayMs: 2 },
     logger: testLogger,
-    readLimiter: rateLimiterFromPerMinute(600, 'read'),
-    writeLimiter: rateLimiterFromPerMinute(600, 'write'),
+    readLimiter: rateLimiterFromPerMinute(600),
+    writeLimiter: rateLimiterFromPerMinute(600),
   });
 }
 

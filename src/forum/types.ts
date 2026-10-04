@@ -14,9 +14,6 @@ export const systemInfoSchema = z.looseObject({
   log_id: z.number().optional(),
 });
 
-export type SystemInfo = z.infer<typeof systemInfoSchema>;
-export type RateLimit = z.infer<typeof rateLimitSchema>;
-
 /**
  * A forum post as returned by `GET /posts`.
  *
@@ -78,8 +75,6 @@ export const forumThreadSchema = z.looseObject({
   username: z.string().optional(),
 });
 
-export type ForumThread = z.infer<typeof forumThreadSchema>;
-
 export const paginationLinksSchema = z.looseObject({
   pages: z.number().optional(),
   page: z.number().optional(),
@@ -111,8 +106,6 @@ export const postCommentSchema = z.looseObject({
   username_html: z.string().optional(),
   likes: z.number().optional(),
 });
-
-export type PostComment = z.infer<typeof postCommentSchema>;
 
 export const createCommentResponseSchema = z.looseObject({
   comment: postCommentSchema,

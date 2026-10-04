@@ -1,8 +1,8 @@
+import { isIssuanceStatus, type NoticeReason, type SkipReason } from '../../core/vocab';
 import type { Database } from '../Database';
 import type {
   IssuanceRecord,
   IssuanceStats,
-  IssuanceStatus,
   OverallStats,
   ReserveIssuanceInput,
   UserLinkRow,
@@ -33,6 +33,9 @@ interface IssuanceRow {
 }
 
 function mapRow(row: IssuanceRow): IssuanceRecord {
+  if (!isIssuanceStatus(row.status)) {
+    throw new Error(`Unknown issuance status in database: "${row.status}"`);
+  }
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -43,8 +46,8 @@ function mapRow(row: IssuanceRow): IssuanceRecord {
     tgChatId: row.tg_chat_id,
     tgMessageId: row.tg_message_id,
     tgBaseline: row.tg_baseline,
-    status: row.status as IssuanceStatus,
-    skipReason: row.skip_reason,
+    status: row.status,
+    skipReason: row.skip_reason as IssuanceRecord['skipReason'],
     error: row.error,
     attempts: row.attempts,
     commentId: row.comment_id,
@@ -177,7 +180,7 @@ export class IssuanceRepository {
       .run(adCommentId, Date.now(), Date.now(), postId);
   }
 
-  markSkipped(postId: number, reason: string): void {
+  markSkipped(postId: number, reason: SkipReason): void {
     this.db
       .query(`
         UPDATE issuances
@@ -193,7 +196,7 @@ export class IssuanceRepository {
    */
   markSkippedWithComments(
     postId: number,
-    reason: string,
+    reason: NoticeReason,
     commentId: number | null,
     adCommentId: number | null,
   ): void {
@@ -333,7 +336,8 @@ export class IssuanceRepository {
     };
 
     for (const row of rows) {
-      const status = row.status as IssuanceStatus;
+      if (!isIssuanceStatus(row.status)) continue;
+      const status = row.status;
       if (status in stats) stats[status] = row.count;
       stats.total += row.count;
     }

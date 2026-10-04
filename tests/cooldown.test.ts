@@ -67,8 +67,8 @@ describe('ForumClient cooldown', () => {
         timeoutMs: 1_000,
         retry: { attempts: 1, delayMs: 1, maxDelayMs: 1 },
         logger: testLogger,
-        readLimiter: rateLimiterFromPerMinute(6_000, 'read'),
-        writeLimiter: rateLimiterFromPerMinute(6_000, 'write'),
+        readLimiter: rateLimiterFromPerMinute(6_000),
+        writeLimiter: rateLimiterFromPerMinute(6_000),
         cooldown: {
           wait: async () => {
             gateCalls += 1;

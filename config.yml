@@ -1,65 +1,67 @@
 # ------------------------------------------------------------------
-# Lolz Star Bot — runtime configuration (no secrets here, see .env)
-#
-# Everything is in plain human units: seconds, minutes, counts.
+# Lolz Star Bot — рабочая конфигурация (секреты в .env, не здесь).
+# Все длительности — в миллисекундах, если не сказано иначе.
+# Переменные окружения из .env переопределяют значения ниже.
 # ------------------------------------------------------------------
 
 forum:
-  # API base url. Env FORUM_BASE_URL overrides this.
+  # Адрес API форума. Переопределяется FORUM_BASE_URL.
   baseUrl: https://api.lolz.team
-  # Thread to watch. Env FORUM_THREAD_ID overrides this.
+  # Тема, которую следим. Переопределяется FORUM_THREAD_ID.
   threadId: 10335815
-  # Per-request timeout.
+  # Таймаут одного запроса, мс.
   requestTimeoutMs: 30000
-  # `natural_reverse` keeps the pinned first post + newest posts on page 1.
+  # Порядок постов: natural_reverse = закреплённый первый пост + новые сверху.
   order: natural_reverse
 
 polling:
-  # How often (ms) to check the newest page for new posts.
+  # Как часто проверять новые посты, мс. Переопределяется POLL_INTERVAL_MS.
   intervalMs: 15000
-  # Posts per request (max 20).
+  # Постов за один запрос (максимум 20).
   pageLimit: 20
-  # Pause (ms) between page fetches while walking the backlog.
+  # Пауза между запросами страниц при обходе беклога, мс.
   pageDelayMs: 5000
-  # Safety cap for the backlog walk, 0 = unlimited.
+  # Максимум страниц при первичном обходе беклога, 0 = без лимита.
   maxBackfillPages: 0
-  # Page that carries the newest posts.
-  idlePage: 1
 
 pacing:
-  # One shared minimum pause (ms) between any two outgoing actions:
-  # star reaction, confirmation comment, ad comment, stats edits.
+  # Общая пауза между любыми действиями: звезда, комментарии, правки, мс.
   cooldownMs: 6000
-  # Wait (ms) before verifying a star reaction whose send threw.
+  # Ожидание перед проверкой звезды, если её отправка упала, мс.
   starVerifyDelayMs: 2000
-  # Wait (ms) before verifying a comment that errored (forum can be slow).
+  # Ожидание перед проверкой комментария, если запрос упал, мс.
   commentVerifyDelayMs: 3000
 
 balance:
-  # While out of stars, how often (ms) to re-check the Telegram balance.
+  # Как часто проверять баланс звёзд, пока их не хватает, мс.
   checkIntervalMs: 60000
 
 star:
-  # Stars per post.
+  # Сколько звёзд ставить на пост. Переопределяется STAR_COUNT.
   count: 1
-  # Env DRY_RUN / `bun run dry` overrides this: simulate, spend nothing.
+  # Режим симуляции без трат (true/1/yes/on). Переопределяется DRY_RUN.
   dryRun: false
 
 comment:
+  # Включены ли комментарии бота (подтверждение и уведомления).
   enabled: true
-  # Substituted into `{text}` of the confirmation comment.
+  # Текст, который подставляется в {text} шаблона ниже.
   text: "+\n[IMG=width=100;align=left]https://nztcdn.com/files/90b5834c-80da-44f3-a28c-25a9f29638e3.webp[/IMG]"
-  # Placeholders: {user_id} {username} {text} {stars} {link}
+  # Шаблон комментария. Плейсхолдеры: {user_id} {username} {text} {stars} {link}.
   template: '[user="{user_id}"]{username}[/user], {text}'
-  # Sent instead of the usual confirmation when the channel disabled paid reactions.
+  # Уведомление: у канала отключены платные реакции.
   paidReactionsDisabledText: 'у вас выключены платные реакции, включите их и приходите еще!'
-  # Sent when a bare channel link is submitted but the channel has no posts.
+  # Уведомление: в канале нет постов.
   noPostsFoundText: 'не нашёл пост в канале, скиньте ссылку на конкретный пост!'
-  # Sent when the post contains no valid public Telegram link at all.
+  # Уведомление: в посте нет валидной ссылки на Telegram.
   noLinkFoundText: 'не нашёл ссылку в посте, скиньте ссылку на канал или конкретный пост!'
-  # Second comment under every post — an advertisement. Fully configurable.
+  # Уведомление: ссылку не удалось открыть.
+  linkUnresolvableText: 'не смог открыть ссылку, проверьте её и скиньте ещё раз!'
+  # Второй комментарий под постом — реклама. Полностью настраивается.
   ad:
+    # Включена ли реклама.
     enabled: true
+    # Шаблон рекламы (те же плейсхолдеры, что у шаблона выше).
     template: |-
       [ad=align=center][B][tooltip=5]Zelenka[/tooltip] Work  — задания за деньги[/B]
 
@@ -70,50 +72,53 @@ comment:
       [URL='https://zelenka.work/?ref=lolz_cucumber'][B]zelenka.work[/B][/URL][B]  [/B][/ad]
 
 rateLimit:
-  # Forum GET budget per minute (server allows 300). Keep a margin.
+  # Лимит GET-запросов к форуму в минуту (сервер разрешает 300).
   readPerMinute: 240
-  # Forum POST budget per minute (server allows 30). Keep a margin.
+  # Лимит POST/PUT-запросов к форуму в минуту (сервер разрешает 30).
   writePerMinute: 20
 
 retry:
-  # Max attempts for a request before giving up.
+  # Сколько попыток даётся одному HTTP-запросу.
   attempts: 3
-  # Base retry delay (ms); grows exponentially with jitter.
+  # Базовая задержка повтора, мс (растёт экспоненциально с джиттером).
   delayMs: 1000
-  # Ceiling for retry delays (ms).
+  # Максимальная задержка повтора, мс.
   maxDelayMs: 30000
-  # After a post exhausts its attempts, wait this long before trying again.
-  cooldownMs: 3600000
+  # Пауза перед повтором поста, исчерпавшего все попытки, мс.
+  failedPostCooldownMs: 3600000
 
 database:
-  # Env DB_PATH overrides this.
+  # Путь к базе SQLite. Переопределяется DB_PATH.
   path: ./data/star.db
 
 auth:
-  # File holding FORUM_TOKEN (re-read while the forum answers 401).
-  envPath: .env
-  # How often (ms) to re-read that file / probe the forum after a 401.
-  checkIntervalMs: 60000
-  # Repeat the "still waiting for a token" log every N checks (0 = never).
+  # Файл с FORUM_TOKEN (перечитывается, когда форум отвечает 401).
+  tokenFile: .env
+  # Как часто перечитывать токен и проверять форум, мс.
+  tokenCheckIntervalMs: 60000
+  # Раз в сколько проверок писать «всё ещё ждём токен» (0 = никогда).
   logEveryChecks: 10
 
 stats:
-  # Live stats thread on the forum (edited every minute).
+  # Включена ли живая страница статистики на форуме.
   enabled: true
-  # Thread whose title + first post are rewritten with live stats.
+  # Тема, у которой переписываются заголовок и первый пост.
   threadId: 10345229
-  # How often to refresh the stats page.
+  # Как часто обновлять статистику, мс.
   intervalMs: 60000
-  # `{date}` is replaced with e.g. "26.09.28 13:12 UTC".
+  # {date} заменяется на дату вида «26.09.28 13:12 UTC».
   titleTemplate: 'Razda4a zvezd stats / updated at {date}'
   links:
-    # Per-user spoiler with the channel links they submitted and overlap flags.
+    # Спойлер со ссылками каналов и пересечениями по каждому юзеру.
     enabled: true
 
 telegram:
-  # Env TG_SESSION_PATH overrides this.
+  # Путь к SQLite-сессии Telegram. Переопределяется TG_SESSION_PATH.
+  # Создаётся командой `bun run login`, храни в секрете.
   sessionPath: ./data/tg.session
 
 logging:
+  # Уровень логов: trace/debug/info/warn/error/fatal. Переопределяется LOG_LEVEL.
   level: info
+  # Человекочитаемый вывод логов. Переопределяется LOG_PRETTY.
   pretty: true

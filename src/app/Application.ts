@@ -89,8 +89,8 @@ export class Application {
       timeoutMs: config.forum.requestTimeoutMs,
       retry: config.retry,
       logger,
-      readLimiter: rateLimiterFromPerMinute(config.rateLimit.readPerMinute, 'read'),
-      writeLimiter: rateLimiterFromPerMinute(config.rateLimit.writePerMinute, 'write'),
+      readLimiter: rateLimiterFromPerMinute(config.rateLimit.readPerMinute),
+      writeLimiter: rateLimiterFromPerMinute(config.rateLimit.writePerMinute),
       cooldown,
     });
 
@@ -107,11 +107,11 @@ export class Application {
     const authGate = new AuthGate({
       logger: logger.child('Auth'),
       token: config.forum.token,
-      envPath: config.auth.envPath,
-      readToken: () => readEnvToken(config.auth.envPath),
+      envPath: config.auth.tokenFile,
+      readToken: () => readEnvToken(config.auth.tokenFile),
       applyToken: (token) => forum.setToken(token),
       probe: () => forum.probeAuth(),
-      checkIntervalMs: config.auth.checkIntervalMs,
+      checkIntervalMs: config.auth.tokenCheckIntervalMs,
       logEveryChecks: config.auth.logEveryChecks,
     });
     forum.setAuthGate(authGate);

@@ -71,8 +71,6 @@ export class ForumClient {
   private readonly cooldown?: ActionGate;
   private authGate?: AuthGate;
 
-  lastRateLimit?: ServerRateLimit;
-
   constructor(options: ForumClientOptions) {
     this.baseUrl = options.baseUrl;
     this.token = options.token;
@@ -282,7 +280,6 @@ export class ForumClient {
 
       const rateLimit = this.extractRateLimit(json);
       if (rateLimit) {
-        this.lastRateLimit = rateLimit;
         (method === 'GET' ? this.readLimiter : this.writeLimiter).noteServerState(rateLimit);
       }
 
