@@ -150,76 +150,162 @@ bun run dev       # запуск с авто-перезагрузкой при �
 
 ---
 
-## Деплой на сервер (pm2)
+## Ставим бота на сервер (пошагово, для кентов)
 
-### Подготовка сервера: Bun + PM2
+Ниже — от чистого сервера до работающего бота под pm2. Команды можно копировать
+по порядку. Предполагается свежий Linux-сервер и доступ `root`.
 
-Если сервер чистый (Ubuntu/Debian, работаем от root):
+### 0. Подключиться к серверу
 
 ```bash
-# --- Bun ---
+ssh root@<IP-сервера>
+```
+
+### 1. Поставить Bun
+
+```bash
 curl -fsSL https://bun.sh/install | bash
-exec -l "$SHELL"          # перечитать PATH (или выйти/зайти заново)
-bun --version             # должно быть >= 1.4
+exec -l "$SHELL"
+bun --version          # должно быть >= 1.4
+```
 
-# --- PM2 (глобально) ---
-bun add -g pm2            # или: npm i -g pm2
+Если пишет `bun: command not found` — пропиши PATH и перезайди:
+
+```bash
+echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
+echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+bun --version
+```
+
+### 2. Поставить PM2
+
+```bash
+bun add -g pm2         # или, если так не выйдет: npm i -g pm2
 pm2 -v
-
-# --- автозапуск бота после перезагрузки сервера (один раз) ---
-pm2 startup systemd       # покажет команду — выполни её от root
-pm2 save                  # сохранить текущий список процессов
 ```
 
-Если `bun` не находится в новом шелле, добавь в `~/.bashrc` (или `~/.zshrc`):
+### 3. Скачать код
 
 ```bash
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
-```
-
-PM2-конфиг сам ищет `bun` (сначала `BUN_PATH`, затем `/usr/local/bin/bun`,
-`/root/.bun/bin/bun`, затем PATH) — обычно ничего указывать не нужно.
-
-### Установка и запуск
-
-```bash
-# 1. код
-git clone <repo-url> zvezd && cd zvezd
-bun install
-
-# 2. секреты и настройки
-cp .env.example .env && $EDITOR .env
-$EDITOR config.yml            # forum.threadId, stats.threadId и т.д.
-
-# 3. один раз авторизовать Telegram (интерактивно — понадобится терминал)
-bun run login
-
-# 4. запустить под pm2
-pm2 start ecosystem.config.cjs
-pm2 logs zvezd                # смотреть логи
-```
-
-Обновление после `git push`:
-
-```bash
+cd /root
+git clone git@github.com:9sx77ssl/zvezd.git zvezd
 cd zvezd
+```
+
+Если нет SSH-ключа к GitHub — клонируй по HTTPS:
+
+```bash
+git clone https://github.com/9sx77ssl/zvezd.git zvezd
+```
+
+> Репозиторий приватный — нужен доступ (SSH-ключ или токен). Попроси его выдать.
+
+### 4. Установить зависимости
+
+```bash
+bun install
+```
+
+### 5. Заполнить секреты `.env`
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Впиши свои значения (только эти три строки):
+
+```dotenv
+FORUM_TOKEN=<токен API lolz.team, права read и post>
+TG_API_ID=<число>
+TG_API_HASH=<строка>
+```
+
+Сохранить: `Ctrl+O`, `Enter`, выйти: `Ctrl+X`.
+
+### 6. Настроить `config.yml`
+
+```bash
+nano config.yml
+```
+
+Обязательно проверь:
+
+- `forum.threadId` — id **твоей** темы раздачи (из ссылки `/threads/<id>/`);
+- `stats.enabled` и `stats.threadId` — тема статистики (или `stats.enabled: false`);
+- при желании `star.count`, `comment.text`, `comment.ad`.
+
+Сохранить: `Ctrl+O`, `Enter`, выйти: `Ctrl+X`.
+
+### 7. Залогиниться в Telegram (один раз)
+
+```bash
+bun run login
+```
+
+Спросит телефон → код → пароль 2FA. Сессия сохранится в `data/tg.session`.
+
+### 8. Проверить без трат
+
+```bash
+bun run dry
+```
+
+Оставь на ~30 секунд, убедись, что в логах нет ошибок, затем `Ctrl+C`.
+Звёзды при этом **не** списываются.
+
+### 9. Запустить под pm2
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 logs zvezd
+```
+
+Должно появиться `Bot started`, а дальше каждую минуту `Stats page updated`.
+Выйти из логов: `Ctrl+C` (бот продолжит работать — логи это просто просмотр).
+
+### 10. Автозапуск после перезагрузки сервера
+
+```bash
+pm2 save
+pm2 startup systemd
+```
+
+`pm2 startup` выведет команду вида
+`sudo env PATH=... pm2 startup systemd -u root --hp /root` — **выполни её**, затем
+ещё раз `pm2 save`.
+
+### Обновление после `git push`
+
+```bash
+cd /root/zvezd
 git pull --ff-only
 bun install
 pm2 startOrRestart ecosystem.config.cjs   # перечитывает конфиг и перезапускает
 ```
 
-Проверка статуса:
+> После смены настроек в `config.yml` тоже запускай `pm2 startOrRestart ecosystem.config.cjs`
+> (обычный `pm2 restart zvezd` конфиг не перечитывает).
 
-```bash
-pm2 describe zvezd        # status = online, restarts
-pm2 logs zvezd --lines 50 # хвост логов
-pm2 monit                 # живой монитор CPU/RAM
-```
+### Шпаргалка pm2
 
-PM2-конфиг (`ecosystem.config.cjs`) пишет логи в `/root/.pm2/logs/zvezd-out.log`
-и `/root/.pm2/logs/zvezd-error.log`, перезапускает бота при падении и следит за
-памятью (`max_memory_restart: 400M`).
+| Команда | Что делает |
+|---|---|
+| `pm2 list` | список процессов и статусы |
+| `pm2 logs zvezd` | логи в реальном времени (`Ctrl+C` — выйти) |
+| `pm2 logs zvezd --lines 100` | последние 100 строк логов |
+| `pm2 describe zvezd` | статус, число рестартов, путь, uptime |
+| `pm2 restart zvezd` | перезапустить (без перечитывания конфига) |
+| `pm2 stop zvezd` | остановить |
+| `pm2 delete zvezd` | убрать из pm2 |
+| `pm2 monit` | живой монитор CPU/RAM |
+| `pm2 save` | сохранить список процессов для автозапуска |
+
+Логи лежат в `/root/.pm2/logs/zvezd-out.log` и
+`/root/.pm2/logs/zvezd-error.log`. PM2-конфиг сам ищет `bun` (`BUN_PATH` →
+`/usr/local/bin/bun` → `/root/.bun/bin/bun` → PATH), перезапускает бота при падении
+и следит за памятью (`max_memory_restart: 400M`).
 
 > **`bun run login` лучше сделать на сервере** (он интерактивный). Либо залогинься
 > локально и перенеси файл `telegram.sessionPath` на сервер. Сессия привязана к
