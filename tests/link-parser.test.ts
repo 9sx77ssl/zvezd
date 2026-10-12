@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   channelOfLink,
   distinctChannelCount,
+  extractTgLinks,
   extractTgPostLinks,
   parseTgChannelLink,
   parseTgPostLink,
@@ -156,5 +157,24 @@ describe('link-parser', () => {
     expect(distinctChannelCount(selectLinkCandidates('<a href="https://t.me/fooo/5">p</a>'))).toBe(
       1,
     );
+  });
+
+  it('ignores links in a "Переслано из" (lztTgPost-forwarded) block', () => {
+    const html =
+      '<div class="lztTgPost TelegramUnfurl"><div class="lztTgPost-header">' +
+      '<a href="https://t.me/newsnarika" class="lztTgPost-authorName">иᴄᴛᴏᴩия</a>' +
+      '<a href="https://t.me/newsnarika/169" class="link lztTgPost-source">https://t.me/newsnarika/169</a>' +
+      '</div>' +
+      '<div class="lztTgPost-forwarded"><i class="fal fa-share"></i>Переслано из ' +
+      '<a href="https://t.me/loon_79" rel="nofollow">crazy lady</a></div></div>';
+
+    expect(extractTgLinks(html).map((link) => link.url)).toEqual([
+      'https://t.me/newsnarika',
+      'https://t.me/newsnarika/169',
+    ]);
+    expect(selectLinkCandidates(html).map((link) => link.url)).toEqual([
+      'https://t.me/newsnarika/169',
+    ]);
+    expect(distinctChannelCount(selectLinkCandidates(html))).toBe(1);
   });
 });

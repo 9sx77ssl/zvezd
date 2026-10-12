@@ -126,7 +126,9 @@ Data model (`src/db/Database.ts`):
   (`bbCodeHide`) blocks are found; only genuinely link-less posts trigger the notice.
 - A post may contain several links. `selectLinkCandidates` (link-parser) returns them
   in order of appearance (non-TG hosts like YouTube are ignored, a bare channel link
-  is dropped when the same channel also has a post link). `IssuanceService.pickTarget`
+  is dropped when the same channel also has a post link, and links inside the
+  `Переслано из` / `lztTgPost-forwarded` block are stripped — they are the forwarded
+  source, not the author's). `IssuanceService.pickTarget`
   then resolves them in order and stars the **first** one that is resolvable and
   accepts paid reactions; the reason for the first failing candidate becomes the notice
   when none works. With several **distinct channels** it still stars only one and

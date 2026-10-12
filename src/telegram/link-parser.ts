@@ -78,13 +78,26 @@ export function channelOfLink(input: string): string | null {
 }
 
 /**
+ * lolz wraps the "Переслано из <channel>" attribution in this block. Its link
+ * points at the post's *source*, not at something the author submitted, so it
+ * must never be starred or counted as one of the author's links.
+ */
+const FORWARDED_BLOCK = /<div\b[^>]*\blztTgPost-forwarded\b[^>]*>[\s\S]*?<\/div>/gi;
+
+function stripForwardedBlocks(html: string): string {
+  return html.replace(FORWARDED_BLOCK, ' ');
+}
+
+/**
  * Extract every distinct valid link from an HTML string, preserving order of
  * appearance. Duplicates (same channel + message, or same channel) collapse.
+ * Links inside a "Переслано из" (forwarded) block are ignored.
  */
 export function extractTgLinks(html: string): TgLink[] {
+  const source = stripForwardedBlocks(html);
   const found = new Map<string, { link: TgLink; index: number }>();
 
-  for (const match of html.matchAll(POST_PATTERN)) {
+  for (const match of source.matchAll(POST_PATTERN)) {
     const username = match[1];
     const messageId = Number(match[2]);
     if (!username || !Number.isInteger(messageId) || messageId <= 0) continue;
@@ -98,7 +111,7 @@ export function extractTgLinks(html: string): TgLink[] {
     }
   }
 
-  for (const match of html.matchAll(CHANNEL_PATTERN)) {
+  for (const match of source.matchAll(CHANNEL_PATTERN)) {
     const username = match[1];
     if (!username) continue;
 
