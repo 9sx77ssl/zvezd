@@ -140,6 +140,9 @@ Data model (`src/db/Database.ts`):
   loops forever as a retryable failure.
 - Comments are deduped by exact body (`findOwnCommentByBody`, visible only) and stars
   are idempotent via `tg_baseline`, so retries after a partial failure never double-post.
+  The lost-DB `comments_present` skip fires only when **our own** visible comment is
+  already on the post (a `GET /posts/comments`, subject to the read limiter); comments
+  left by other users don't skip a fresh submission.
 - `config.yml` and `.env.example` comments are Russian; schema JSDoc stays English.
 
 ## Deploy

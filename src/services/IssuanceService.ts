@@ -169,14 +169,20 @@ export class IssuanceService {
       }
     }
 
-    // Second safety layer for a lost database: the forum post already has
-    // comments, so we assume it was handled and never spend a star on it.
+    // Lost-database safety: only when WE already commented on this post do we
+    // assume it was handled and never spend a star on it again. Comments left by
+    // other users must not skip a fresh submission.
     if (created && (post.comment_count ?? 0) > 0) {
-      this.repository.markSkipped(postId, 'comments_present');
-      log.info('Skipped: post already has comments (assumed handled)', {
+      if (await this.hasOwnComment(postId)) {
+        this.repository.markSkipped(postId, 'comments_present');
+        log.info('Skipped: our comment is already on the post (assumed handled)', {
+          commentCount: post.comment_count,
+        });
+        return { kind: 'skipped', postId, reason: 'comments_present' };
+      }
+      log.debug('Post has comments but none are ours; processing normally', {
         commentCount: post.comment_count,
       });
-      return { kind: 'skipped', postId, reason: 'comments_present' };
     }
 
     this.repository.bumpAttempts(postId);
@@ -521,6 +527,26 @@ export class IssuanceService {
         return existing;
       }
       throw err;
+    }
+  }
+
+  /**
+   * Whether our forum account already has a visible comment on the post. Used
+   * as the lost-database fallback: a post we already engaged with must not
+   * spend another star. Foreign comments do not count.
+   */
+  private async hasOwnComment(postId: number): Promise<boolean> {
+    try {
+      const { comments } = await this.forum.getComments(postId);
+      return comments.some(
+        (comment) =>
+          comment.message_state === 'visible' && comment.user_id === this.selfForumUserId,
+      );
+    } catch (err) {
+      // Cannot prove we commented (transient read error). Process normally; the
+      // `post_id` UNIQUE row still guards against double-spending for a live DB.
+      this.logger.warn('Could not read existing comments', { postId, ...errorToLog(err) });
+      return false;
     }
   }
 

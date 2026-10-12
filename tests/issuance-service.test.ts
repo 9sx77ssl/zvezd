@@ -183,14 +183,32 @@ describe('IssuanceService', () => {
     expect(forum.createdBodies).toHaveLength(2);
   });
 
-  it('skips posts that already have comments (lost database fallback)', async () => {
-    const { service, repository, telegram } = setup();
+  it('skips a post when our own comment is already there (lost database fallback)', async () => {
+    const { service, repository, telegram } = setup({
+      existingComments: [
+        { post_comment_id: 777, user_id: 1, message: 'что-то', message_state: 'visible' },
+      ],
+    });
 
     const outcome = await service.process(makePost({ post_id: 101, comment_count: 2 }));
 
     expect(outcome).toMatchObject({ kind: 'skipped', reason: 'comments_present' });
     expect(telegram.sendCalls).toBe(0);
     expect(repository.findByPostId(101)?.skipReason).toBe('comments_present');
+  });
+
+  it('processes a post whose comments are not ours', async () => {
+    const { service, repository, telegram } = setup({
+      existingComments: [
+        { post_comment_id: 900, user_id: 4242, message: 'чужой коммент', message_state: 'visible' },
+      ],
+    });
+
+    const outcome = await service.process(makePost({ post_id: 160, comment_count: 2 }));
+
+    expect(outcome).toMatchObject({ kind: 'processed' });
+    expect(telegram.sendCalls).toBe(1);
+    expect(repository.findByPostId(160)?.status).toBe('commented');
   });
 
   it('notices the user when the post has no Telegram link', async () => {
